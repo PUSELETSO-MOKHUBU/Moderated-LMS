@@ -4,21 +4,52 @@
 #include "models/Submission.h"
 #include "models/MarkAudit.h"
 
-User::User() : id_(-1), username_(), passwordHash_(), role_(Role::Student), departmentId_(-1) {}
+#include <stdexcept>
+#include <utility>
 
-User::User(int id, std::string username, std::string passwordHash, Role role, int departmentId)
-    : id_(id), username_(std::move(username)), passwordHash_(std::move(passwordHash)), role_(role), departmentId_(departmentId) {}
+User::User(int id, std::string username, std::string passwordHash, int departmentId)
+    : id_(id), username_(std::move(username)), passwordHash_(std::move(passwordHash)),
+      departmentId_(departmentId) {}
 
-int User::id() const { return id_; }
-const std::string& User::username() const { return username_; }
-const std::string& User::passwordHash() const { return passwordHash_; }
-Role User::role() const { return role_; }
-int User::departmentId() const { return departmentId_; }
-void User::setId(int id) { id_ = id; }
-void User::setUsername(const std::string& username) { username_ = username; }
-void User::setPasswordHash(const std::string& passwordHash) { passwordHash_ = passwordHash; }
-void User::setRole(Role role) { role_ = role; }
-void User::setDepartmentId(int departmentId) { departmentId_ = departmentId; }
+int User::id() const noexcept { return id_; }
+const std::string& User::username() const noexcept { return username_; }
+const std::string& User::passwordHash() const noexcept { return passwordHash_; }
+int User::departmentId() const noexcept { return departmentId_; }
+
+Role Administrator::role() const noexcept { return Role::Administrator; }
+bool Administrator::can(Permission permission) const noexcept {
+    return permission == Permission::ManageUsers || permission == Permission::ManageCourses;
+}
+Role Lecturer::role() const noexcept { return Role::Lecturer; }
+bool Lecturer::can(Permission permission) const noexcept { return permission == Permission::TeachCourse; }
+Role HeadOfDepartment::role() const noexcept { return Role::HeadOfDepartment; }
+bool HeadOfDepartment::can(Permission permission) const noexcept {
+    return permission == Permission::ModerateDepartment;
+}
+Role Student::role() const noexcept { return Role::Student; }
+bool Student::can(Permission permission) const noexcept {
+    return permission == Permission::SubmitWork || permission == Permission::ViewReleasedMarks;
+}
+
+std::string roleToText(Role role) {
+    switch (role) {
+        case Role::Administrator: return "ADMIN";
+        case Role::Lecturer: return "LECTURER";
+        case Role::HeadOfDepartment: return "HOD";
+        case Role::Student: return "STUDENT";
+    }
+    throw std::invalid_argument("Unknown user role.");
+}
+
+std::unique_ptr<User> UserFactory::create(int id, const std::string& username,
+                                          const std::string& passwordHash,
+                                          const std::string& role, int departmentId) {
+    if (role == "ADMIN") return std::make_unique<Administrator>(id, username, passwordHash, departmentId);
+    if (role == "LECTURER") return std::make_unique<Lecturer>(id, username, passwordHash, departmentId);
+    if (role == "HOD") return std::make_unique<HeadOfDepartment>(id, username, passwordHash, departmentId);
+    if (role == "STUDENT") return std::make_unique<Student>(id, username, passwordHash, departmentId);
+    throw std::runtime_error("Database contains an unknown user role.");
+}
 
 Course::Course() : id_(-1), code_(), title_(), departmentId_(-1) {}
 Course::Course(int id, std::string code, std::string title, int departmentId)

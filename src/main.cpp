@@ -1,170 +1,453 @@
+#include "Database.h"
+#include "FileStorage.h"
+
+#include <cctype>
+#include <iomanip>
 #include <iostream>
+#include <limits>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-#include "Database.h"
-#include "models/User.h"
-#include "models/Course.h"
-#include "models/Assignment.h"
-#include "models/Submission.h"
-#include "models/MarkAudit.h"
+namespace {
 
-struct LoginAccount {
-    std::string username;
-    std::string password;
-    std::string displayName;
-    Role role;
-};
-
-struct AssignmentRecord {
-    std::string title;
-    std::string deadline;
-    double maxMark;
-};
-
-struct SubmissionRecord {
-    std::string studentName;
-    std::string assignmentTitle;
-    std::string status;
-    double mark;
-};
-
-void printMenuHeader(const std::string& title) {
-    std::cout << "\n===== " << title << " =====\n";
+std::string readLine(const std::string& prompt) {
+    std::cout << prompt;
+    std::string value;
+    if (!std::getline(std::cin, value)) throw std::runtime_error("Input ended.");
+    if (!value.empty() && value.back() == '\r') value.pop_back();
+    return value;
 }
 
-void showMainMenu() {
-    printMenuHeader("Moderated LMS");
-    std::cout << "1. Login as Administrator\n";
-    std::cout << "2. Login as Lecturer\n";
-    std::cout << "3. Login as Head of Department\n";
-    std::cout << "4. Login as Student\n";
-    std::cout << "5. Exit\n";
-    std::cout << "Select an option: ";
+int readInt(const std::string& prompt) {
+    for (;;) {
+        const std::string value = readLine(prompt);
+        std::size_t consumed = 0;
+        try {
+            const int result = std::stoi(value, &consumed);
+            if (consumed == value.size()) return result;
+        } catch (const std::exception&) {
+        }
+        std::cout << "Enter a valid whole number.\n";
+    }
 }
 
-bool authenticate(const std::vector<LoginAccount>& accounts, const std::string& username, const std::string& password, LoginAccount& matchedAccount) {
-    for (const auto& account : accounts) {
-        if (account.username == username && account.password == password) {
-            matchedAccount = account;
-            return true;
+double readDouble(const std::string& prompt) {
+    const std::string value = readLine(prompt);
+    std::size_t consumed = 0;
+    try {
+        const double result = std::stod(value, &consumed);
+        if (consumed != value.size()) throw std::invalid_argument("trailing characters");
+        return result;
+    } catch (const std::exception&) {
+        throw std::invalid_argument("Enter a valid number.");
+    }
+}
+
+void printHeader(const std::string& value) {
+    std::cout << "\n=== " << value << " ===\n";
+}
+
+Role readRole() {
+    std::string value = readLine("Role (ADMIN/LECTURER/HOD/STUDENT): ");
+    for (char& character : value) {
+        character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+    }
+    if (value == "ADMIN") return Role::Administrator;
+    if (value == "LECTURER") return Role::Lecturer;
+    if (value == "HOD") return Role::HeadOfDepartment;
+    if (value == "STUDENT") return Role::Student;
+    throw std::invalid_argument("Role must be ADMIN, LECTURER, HOD, or STUDENT.");
+}
+
+void printDepartments(Database& database, const User& user) {
+    std::cout << "Departments:\n";
+    for (const auto& department : database.listDepartments(user)) {
+        std::cout << "  " << department.id << " - " << department.name << '\n';
+    }
+}
+
+void printCourses(Database& database, const User& user) {
+    std::cout << "Courses:\n";
+    const auto courses = database.coursesFor(user);
+    if (courses.empty()) std::cout << "  (none)\n";
+    for (const auto& course : courses) {
+        std::cout << "  " << course.id << " - " << course.code << ": " << course.title
+                  << " [" << course.departmentName << "]\n";
+    }
+}
+
+void printAssignments(const std::vector<AssignmentRecord>& assignments, bool showCounts = false) {
+    if (assignments.empty()) {
+        std::cout << "No assignments found.\n";
+        return;
+    }
+    for (const auto& assignment : assignments) {
+        std::cout << "  ID " << assignment.id << " | " << assignment.courseCode << " | "
+                  << assignment.title << " | deadline " << assignment.deadline
+                  << " | effective " << assignment.effectiveDeadline
+                  << " | max " << assignment.maxMark;
+        if (showCounts) {
+            std::cout << " | active submissions " << assignment.submissionCount
+                      << " | marked/released " << assignment.markedCount;
+        }
+        std::cout << '\n';
+        if (!assignment.attachmentPath.empty()) {
+            std::cout << "    Assignment document: " << assignment.attachmentPath << '\n';
         }
     }
-    return false;
 }
 
-void showAdminDashboard() {
-    printMenuHeader("Administrator Dashboard");
-    std::cout << "- Create and manage users\n";
-    std::cout << "- Create departments and courses\n";
-    std::cout << "- Assign lecturers to courses\n";
-    std::cout << "- Enrol students in courses\n";
-    std::cout << "- Review system records and access control\n";
+void printSubmissions(const std::vector<SubmissionRecord>& submissions) {
+    if (submissions.empty()) {
+        std::cout << "No submissions found.\n";
+        return;
+    }
+    for (const auto& submission : submissions) {
+        std::cout << "  ID " << submission.id << " | " << submission.courseCode << " | "
+                  << submission.assignmentTitle << " | student " << submission.studentName
+                  << " | v" << submission.version << " | " << submission.status
+                  << " | submitted " << submission.submittedAt;
+        std::cout << "\n    Student document: " << submission.filePath;
+        if (!submission.assignmentAttachmentPath.empty()) {
+            std::cout << "\n    Assignment brief: " << submission.assignmentAttachmentPath;
+        }
+        if (submission.status == "MARKED" || submission.status == "MODERATED") {
+            std::cout << "\n    final " << submission.finalMark << "/" << submission.maxMark
+                      << " | feedback: " << submission.feedback;
+        }
+        std::cout << '\n';
+    }
 }
 
-void showLecturerDashboard() {
-    printMenuHeader("Lecturer Dashboard");
-    std::cout << "- Create assignments for a course\n";
-    std::cout << "- Grant individual extensions\n";
-    std::cout << "- Mark student submissions\n";
-    std::cout << "- Add written feedback\n";
-    std::cout << "- View submissions for assigned courses\n";
+void runAdmin(Database& database, const User& user) {
+    for (;;) {
+        printHeader("Administrator");
+        std::cout << "1. Create user\n2. Edit/activate/deactivate user\n3. List users\n"
+                     "4. Create department\n5. Create course\n6. Edit course\n"
+                     "7. Assign lecturer to course\n8. Enrol student in course\n"
+                     "9. List courses\n10. Edit department\n0. Log out\n";
+        const int choice = readInt("Choice: ");
+        if (choice == 0) return;
+        try {
+            if (choice == 1) {
+                const std::string username = readLine("Username: ");
+                const std::string password = readLine("Password (at least 8 characters): ");
+                const Role role = readRole();
+                printDepartments(database, user);
+                const int departmentId = readInt("Department ID (0 for none): ");
+                database.createUser(user, username, password, role, departmentId == 0 ? -1 : departmentId);
+                std::cout << "User created.\n";
+            } else if (choice == 2) {
+                for (const auto& record : database.listUsers(user)) {
+                    std::cout << "  " << record.id << " | " << record.username << " | " << record.role
+                              << " | " << (record.active ? "active" : "disabled")
+                              << " | department " << record.departmentId << '\n';
+                }
+                const int id = readInt("User ID: ");
+                const auto records = database.listUsers(user);
+                std::vector<UserRecord>::const_iterator current = records.begin();
+                while (current != records.end() && current->id != id) ++current;
+                if (current == records.end()) throw std::runtime_error("User not found.");
+                const std::string username = readLine("New username: ");
+                const Role role = readRole();
+                printDepartments(database, user);
+                const int departmentId = readInt("Department ID (0 for none): ");
+                std::string active;
+                do {
+                    active = readLine("Active? (y/n): ");
+                    if (active != "y" && active != "Y" && active != "n" && active != "N") {
+                        std::cout << "Enter y or n.\n";
+                    }
+                } while (active != "y" && active != "Y" && active != "n" && active != "N");
+                const std::string password = readLine("New password (blank to keep current): ");
+                database.updateUser(user, id, username, role, departmentId == 0 ? -1 : departmentId,
+                                    active == "y" || active == "Y", password);
+                std::cout << "User updated.\n";
+            } else if (choice == 3) {
+                for (const auto& record : database.listUsers(user)) {
+                    std::cout << record.id << " | " << record.username << " | " << record.role
+                              << " | " << (record.active ? "active" : "disabled") << '\n';
+                }
+            } else if (choice == 4) {
+                const int id = database.createDepartment(user, readLine("Department name: "));
+                std::cout << "Department created with ID " << id << ".\n";
+            } else if (choice == 5) {
+                printDepartments(database, user);
+                const std::string code = readLine("Course code: ");
+                const std::string title = readLine("Course title: ");
+                const int departmentId = readInt("Department ID: ");
+                const int id = database.createCourse(user, code, title, departmentId);
+                std::cout << "Course created with ID " << id << ".\n";
+            } else if (choice == 6) {
+                printCourses(database, user);
+                database.updateCourse(user, readInt("Course ID: "), readLine("Course code: "),
+                                      readLine("Course title: "), readInt("Department ID: "));
+                std::cout << "Course updated.\n";
+            } else if (choice == 7) {
+                printCourses(database, user);
+                const int lecturerId = readInt("Lecturer user ID: ");
+                const int courseId = readInt("Course ID: ");
+                database.assignLecturer(user, lecturerId, courseId);
+                std::cout << "Lecturer assigned.\n";
+            } else if (choice == 8) {
+                printCourses(database, user);
+                const int studentId = readInt("Student user ID: ");
+                const int courseId = readInt("Course ID: ");
+                database.enrolStudent(user, studentId, courseId);
+                std::cout << "Student enrolled.\n";
+            } else if (choice == 9) {
+                printCourses(database, user);
+            } else if (choice == 10) {
+                printDepartments(database, user);
+                database.updateDepartment(user, readInt("Department ID: "), readLine("New department name: "));
+                std::cout << "Department updated.\n";
+            } else {
+                std::cout << "Choose an option from 0 to 10.\n";
+            }
+        } catch (const std::exception& error) {
+            std::cerr << "Action failed: " << error.what() << '\n';
+        }
+    }
 }
 
-void showHodDashboard() {
-    printMenuHeader("Head of Department Dashboard");
-    std::cout << "- Review all marked submissions in the department\n";
-    std::cout << "- Approve or change marks\n";
-    std::cout << "- Record reasons and maintain audit trail\n";
-    std::cout << "- Release marks only after moderation\n";
+void runLecturer(Database& database, const User& user, const FileStorage& files) {
+    for (;;) {
+        printHeader("Lecturer");
+        std::cout << "1. List assigned courses\n2. List assignments\n3. Create assignment\n"
+                     "4. Grant/update extension\n5. View and mark submissions\n0. Log out\n";
+        const int choice = readInt("Choice: ");
+        if (choice == 0) return;
+        try {
+            if (choice == 1) {
+                printCourses(database, user);
+            } else if (choice == 2) {
+                printAssignments(database.assignmentsForLecturer(user), true);
+            } else if (choice == 3) {
+                printCourses(database, user);
+                const int courseId = readInt("Course ID: ");
+                const std::string title = readLine("Assignment title: ");
+                const std::string deadline = readLine("Deadline (YYYY-MM-DD HH:MM): ");
+                const double maximum = readDouble("Maximum mark: ");
+                const std::string source = readLine(
+                    "Assignment brief document path (PDF/DOCX/ODT/RTF/TXT/PPTX/XLSX/CSV; blank to skip): ");
+                std::string storedPath;
+                if (!source.empty()) storedPath = files.storeDocument(source, UploadKind::Assignment);
+                try {
+                    std::cout << "Assignment created with ID "
+                              << database.createAssignment(user, courseId, title, deadline, maximum, storedPath)
+                              << ".\n";
+                } catch (const std::exception& error) {
+                    if (!storedPath.empty()) {
+                        try {
+                            files.removeStoredFile(storedPath);
+                        } catch (const std::exception& cleanupError) {
+                            throw std::runtime_error(std::string(error.what()) +
+                                "; could not clean up uploaded brief: " + cleanupError.what());
+                        }
+                    }
+                    throw;
+                }
+            } else if (choice == 4) {
+                printCourses(database, user);
+                printAssignments(database.assignmentsForLecturer(user));
+                const int assignment = readInt("Assignment ID: ");
+                const int student = readInt("Student user ID: ");
+                const std::string deadline = readLine("Revised deadline (YYYY-MM-DD HH:MM): ");
+                const std::string reason = readLine("Reason: ");
+                database.grantExtension(user, assignment, student, deadline, reason);
+                std::cout << "Extension saved.\n";
+            } else if (choice == 5) {
+                const auto submissions = database.submissionsForLecturer(user);
+                printSubmissions(submissions);
+                if (!submissions.empty()) {
+                    const int id = readInt("Submission ID to mark/edit (0 to cancel): ");
+                    if (id != 0) {
+                        const double mark = readDouble("Raw mark: ");
+                        const std::string feedback = readLine("Written feedback: ");
+                        std::string reason = "Initial mark";
+                        for (const auto& submission : submissions) {
+                            if (submission.id == id && submission.status == "MARKED") {
+                                reason = readLine("Reason for mark change: ");
+                                break;
+                            }
+                        }
+                        database.saveMark(user, id, mark, feedback, reason);
+                        std::cout << "Mark saved. It is hidden until HoD release.\n";
+                    }
+                }
+            } else {
+                std::cout << "Choose an option from 0 to 5.\n";
+            }
+        } catch (const std::exception& error) {
+            std::cerr << "Action failed: " << error.what() << '\n';
+        }
+    }
 }
 
-void showStudentDashboard() {
-    printMenuHeader("Student Dashboard");
-    std::cout << "- View enrolled courses\n";
-    std::cout << "- Submit or resubmit assignments\n";
-    std::cout << "- Check late penalty and deadline status\n";
-    std::cout << "- View released marks and feedback\n";
+void runHod(Database& database, const User& user) {
+    for (;;) {
+        printHeader("Head of Department");
+        std::cout << "1. List departmental courses\n2. View department assignments and submission counts\n"
+                     "3. Moderate marked work\n4. Release moderated work\n"
+                     "5. View mark audit history\n0. Log out\n";
+        const int choice = readInt("Choice: ");
+        if (choice == 0) return;
+        try {
+            if (choice == 1) {
+                printCourses(database, user);
+            } else if (choice == 2) {
+                printAssignments(database.assignmentsForDepartment(user), true);
+            } else if (choice == 3) {
+                const auto submissions = database.submissionsForModeration(user);
+                printSubmissions(submissions);
+                if (!submissions.empty()) {
+                    const int id = readInt("Submission ID to approve/release (0 to cancel): ");
+                    if (id != 0) {
+                        const std::string mark = readLine("New final mark (blank to approve unchanged): ");
+                        std::optional<double> revised;
+                        std::string reason;
+                        if (!mark.empty()) {
+                            std::size_t consumed = 0;
+                            const double value = std::stod(mark, &consumed);
+                            if (consumed != mark.size()) throw std::invalid_argument("Enter a valid mark.");
+                            revised = value;
+                            reason = readLine("Reason for mark change: ");
+                        }
+                        database.moderateSubmission(user, id, revised, reason);
+                        std::cout << "Moderation saved. Release it from the release queue when ready.\n";
+                    }
+                }
+            } else if (choice == 4) {
+                const auto submissions = database.submissionsReadyForRelease(user);
+                printSubmissions(submissions);
+                if (!submissions.empty()) {
+                    const int id = readInt("Submission ID to release (0 to cancel): ");
+                    if (id != 0) {
+                        database.releaseModerated(user, id);
+                        std::cout << "Result released to the student.\n";
+                    }
+                }
+            } else if (choice == 5) {
+                const auto audits = database.auditForDepartment(user);
+                if (audits.empty()) std::cout << "No mark changes recorded.\n";
+                for (const auto& audit : audits) {
+                    std::cout << audit.id << " | " << audit.submission << " | by " << audit.changedBy << " | ";
+                    if (audit.oldMark) std::cout << *audit.oldMark;
+                    else std::cout << "(initial)";
+                    std::cout << " -> " << audit.newMark << " | " << audit.reason << " | " << audit.changedAt << '\n';
+                }
+            } else {
+                std::cout << "Choose an option from 0 to 5.\n";
+            }
+        } catch (const std::exception& error) {
+            std::cerr << "Action failed: " << error.what() << '\n';
+        }
+    }
 }
+
+void runStudent(Database& database, const User& user, const FileStorage& files) {
+    for (;;) {
+        printHeader("Student");
+        std::cout << "1. View enrolled courses and assignments\n2. Submit/resubmit work\n"
+                     "3. View released marks and feedback\n0. Log out\n";
+        const int choice = readInt("Choice: ");
+        if (choice == 0) return;
+        try {
+            if (choice == 1 || choice == 2) {
+                printCourses(database, user);
+                const auto assignments = database.assignmentsForStudent(user);
+                printAssignments(assignments);
+                if (choice == 2 && !assignments.empty()) {
+                    const int id = readInt("Assignment ID (0 to cancel): ");
+                    if (id != 0) {
+                        const std::string source = readLine(
+                            "Document file path (PDF/DOCX/ODT/RTF/TXT/PPTX/XLSX/CSV): ");
+                        const std::string storedPath = files.storeDocument(source, UploadKind::Submission);
+                        SubmissionReceipt receipt{};
+                        try {
+                            receipt = database.submit(user, id, storedPath);
+                        } catch (const std::exception& error) {
+                            try {
+                                files.removeStoredFile(storedPath);
+                            } catch (const std::exception& cleanupError) {
+                                throw std::runtime_error(std::string(error.what()) +
+                                    "; could not clean up uploaded submission: " + cleanupError.what());
+                            }
+                            throw;
+                        }
+                        std::cout << "Submission saved as ID " << receipt.id << ", version " << receipt.version
+                                  << " (" << receipt.status << "). Stored document: " << receipt.filePath;
+                        if (receipt.daysLate > 0) {
+                            std::cout << " " << receipt.daysLate << " day(s) late; penalty "
+                                      << receipt.penalty << " marks.";
+                        }
+                        if (receipt.markWillBeZero) {
+                            std::cout << " More than three days late: the final mark will be zero.";
+                        }
+                        std::cout << '\n';
+                    }
+                }
+            } else if (choice == 3) {
+                const auto marks = database.releasedMarks(user);
+                if (marks.empty()) std::cout << "No results have been released.\n";
+                for (const auto& mark : marks) {
+                    std::cout << mark.courseCode << " | " << mark.assignmentTitle << " | "
+                              << std::fixed << std::setprecision(2) << mark.finalMark << "/" << mark.maxMark
+                              << " | feedback: " << mark.feedback << '\n';
+                }
+            } else {
+                std::cout << "Choose an option from 0 to 3.\n";
+            }
+        } catch (const std::exception& error) {
+            std::cerr << "Action failed: " << error.what() << '\n';
+        }
+    }
+}
+
+}  // namespace
 
 int main() {
-    std::cout << "Moderated LMS - Implementation Started" << std::endl;
-
-    Database db("lms.db");
-    if (!db.initializeSchema()) {
-        std::cerr << "Database initialization failed." << std::endl;
-        return 1;
-    }
-
-    std::vector<LoginAccount> accounts = {
-        {"admin", "admin123", "System Administrator", Role::Administrator},
-        {"lecturer", "lecturer123", "Mr. Smith", Role::Lecturer},
-        {"hod", "hod123", "Mrs. Mokoena", Role::HeadOfDepartment},
-        {"student", "student123", "Jane Student", Role::Student}
-    };
-
-    std::vector<AssignmentRecord> assignments = {
-        {"Assignment 1", "2026-11-10", 50.0},
-        {"Assignment 2", "2026-11-20", 100.0}
-    };
-
-    std::vector<SubmissionRecord> submissions = {
-        {"Jane Student", "Assignment 1", "Submitted", 45.0},
-        {"John Student", "Assignment 2", "Marked", 67.0}
-    };
-
-    int choice = 0;
-    while (choice != 5) {
-        showMainMenu();
-        std::cin >> choice;
-
-        if (choice < 1 || choice > 5) {
-            std::cout << "Invalid option. Please try again.\n";
-            continue;
+    try {
+        Database database("lms.db");
+        FileStorage files;
+        database.initializeSchema();
+        database.seedDemoAccounts();
+        std::cout << "Moderated LMS - C++17 / SQLite\n"
+                     "First-run demo accounts: admin/admin123, lecturer/lecturer123, "
+                     "hod/hod123, student/student123\n"
+                     "Change demo credentials before real use.\n";
+        for (;;) {
+            printHeader("Login");
+            std::cout << "1. Sign in\n0. Exit\n";
+            const int choice = readInt("Choice: ");
+            if (choice == 0) break;
+            if (choice != 1) {
+                std::cout << "Choose 0 or 1.\n";
+                continue;
+            }
+            const std::string username = readLine("Username: ");
+            const std::string password = readLine("Password: ");
+            auto user = database.authenticate(username, password);
+            if (!user) {
+                std::cout << "Invalid credentials or disabled account.\n";
+                continue;
+            }
+            std::cout << "Welcome, " << user->username() << " (" << roleToText(user->role()) << ").\n";
+            switch (user->role()) {
+                case Role::Administrator: runAdmin(database, *user); break;
+                case Role::Lecturer: runLecturer(database, *user, files); break;
+                case Role::HeadOfDepartment: runHod(database, *user); break;
+                case Role::Student: runStudent(database, *user, files); break;
+            }
         }
-
-        if (choice == 5) {
-            std::cout << "Exiting LMS. Goodbye.\n";
-            break;
-        }
-
-        std::string username;
-        std::string password;
-        std::cout << "Username: ";
-        std::cin >> username;
-        std::cout << "Password: ";
-        std::cin >> password;
-
-        LoginAccount account;
-        if (!authenticate(accounts, username, password, account)) {
-            std::cout << "Invalid username or password. Please try again.\n";
-            continue;
-        }
-
-        std::cout << "\nWelcome, " << account.displayName << "!\n";
-
-        switch (account.role) {
-            case Role::Administrator:
-                showAdminDashboard();
-                std::cout << "\nExample: create department, course, user and enrolment records.\n";
-                break;
-            case Role::Lecturer:
-                showLecturerDashboard();
-                std::cout << "\nExample: create assignment titled '" << assignments[0].title << "' with deadline '" << assignments[0].deadline << "'.\n";
-                break;
-            case Role::HeadOfDepartment:
-                showHodDashboard();
-                std::cout << "\nExample: review submission '" << submissions[0].assignmentTitle << "' by '" << submissions[0].studentName << "'.\n";
-                break;
-            case Role::Student:
-                showStudentDashboard();
-                std::cout << "\nExample: submit work for '" << assignments[0].title << "' and view final mark after release.\n";
-                break;
-            default:
-                std::cout << "Unknown role.\n";
-                break;
+    } catch (const std::exception& error) {
+        if (std::string(error.what()) != "Input ended.") {
+            std::cerr << "Fatal startup error: " << error.what() << '\n';
+            return 1;
         }
     }
-
     return 0;
 }

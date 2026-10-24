@@ -78,27 +78,46 @@ Phase 3 is well-structured and mostly correct. It should be improved by adding:
 - deployment and runtime assumptions for the school environment
 - a clearer statement of how the design supports the V-model verification process
 
-## 4. Implementation start point
+## 4. Implemented system
 
-The project is now moving into implementation. The implementation will begin with a minimal but realistic C++17 foundation using SQLite and a layered structure consistent with the design:
+The C++17 console implementation follows the layered design, with SQLite statements isolated in the data-access
+layer and all runtime values bound through prepared statements. The implementation covers the Phase 2 Must
+requirements for all four roles:
 
-- Domain models for User, Course, Assignment, Submission, and Audit records
-- Data access layer for SQLite initialization and persistence
-- Service layer for role checks, late penalty evaluation, and submission flow
-- Console-based entry point for demonstration and verification
+- Administrators create, edit, disable and list users; maintain departments and courses; assign lecturers; and
+  enrol students.
+- Lecturers manage assignments for assigned courses, grant individual extensions, view active submissions, and
+  mark or revise work with feedback.
+- Students see enrolled courses and assignments, submit or resubmit versioned work, and see only their own
+  released marks.
+- Heads of Department moderate only work in their department, optionally change marks with a reason, release
+  moderated results, and view the department audit history.
 
-This implementation is intended to satisfy the most critical Must requirements first, while preserving the structure needed for later validation and extension.
+An abstract polymorphic `User` hierarchy and `UserFactory` implement role creation. `StandardLatePenalty`
+implements the Strategy pattern. `Database` encapsulates the Repository/DAO operations and SQLite persistence.
+The late policy deducts 10% of the maximum mark per day for up to three days; later work receives zero unless
+an individual extension changes the effective deadline. Resubmission is allowed only before that effective
+deadline, and prior versions remain stored.
 
-## 5. Implementation priorities
+OpenSSL PBKDF2-HMAC-SHA-256 with a random salt is used for password storage. Startup upgrades older
+unencoded password rows to salted hashes. Mark changes and audit inserts occur in the same transaction, and
+database triggers prevent normal SQL updates or deletes of audit records. Coding and build conventions are in
+[CODING_STANDARD.md](./CODING_STANDARD.md).
 
-1. Database schema initialization
-2. User and role model creation
-3. Assignment and submission domain objects
-4. Role-based access checks
-5. Late penalty and extension logic
-6. Mark auditing and release workflow
-7. Testable console interaction and validation
+## 5. Verification
+
+The CMake project defines the application and a CTest integration suite. The suite exercises credential hashing,
+all four roles, role denial, course scoping, extensions, versioned resubmission, late-penalty boundaries,
+zero-after-three-days behavior, hidden marks, moderation, release, audit records, and account disablement.
+The C++17 sources and tests were also compiled with the available Windows GCC toolchain using `-Wall`,
+`-Wextra`, `-Wpedantic`, and `-Werror`; the CMake build and CTest integration suite passed. The suite covers
+role access, department-scoped HoD assignment/mark visibility, extensions, resubmission, late penalties,
+moderation, release, audit, and document uploads. An end-to-end check against the existing project database
+also repaired the demo HoD department assignment and verified visibility of its previously marked work.
+Legacy password migration and console uploads of DOCX/PDF files were tested without exposing credentials.
 
 ## 6. Conclusion
 
-The earlier phases are fundamentally correct, but they need stronger lifecycle traceability, verification, and quality assurance content to match the project brief fully. The implementation phase begins from this corrected understanding and follows the design direction already established in Phase 2 and Phase 3.
+The implementation now covers the Must workflows, applies the defined academic rules, persists records through
+SQLite, and provides automated integration checks. Phase 1–3 traceability and broader stakeholder acceptance
+evidence remain useful project documentation improvements, but they do not block the implemented core system.
