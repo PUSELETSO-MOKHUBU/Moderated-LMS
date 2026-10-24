@@ -116,6 +116,7 @@ public:
                         const std::string& newDeadline, const std::string& reason);
     std::vector<AssignmentRecord> assignmentsForStudent(const User& student);
     SubmissionReceipt submit(const User& student, int assignmentId, const std::string& filePath);
+    std::vector<SubmissionRecord> submissionsForStudent(const User& student);
     std::vector<SubmissionRecord> submissionsForLecturer(const User& lecturer);
     void saveMark(const User& lecturer, int submissionId, double rawMark,
                   const std::string& feedback, const std::string& reason);

@@ -62,6 +62,18 @@ Role readRole() {
     throw std::invalid_argument("Role must be ADMIN, LECTURER, HOD, or STUDENT.");
 }
 
+bool confirm(const std::string& prompt) {
+    for (;;) {
+        std::string answer = readLine(prompt + " (y/n): ");
+        for (char& character : answer) {
+            character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+        }
+        if (answer == "y" || answer == "yes") return true;
+        if (answer == "n" || answer == "no") return false;
+        std::cout << "Enter y or n.\n";
+    }
+}
+
 void printDepartments(Database& database, const User& user) {
     std::cout << "Departments:\n";
     for (const auto& department : database.listDepartments(user)) {
@@ -120,6 +132,37 @@ void printSubmissions(const std::vector<SubmissionRecord>& submissions) {
         }
         std::cout << '\n';
     }
+}
+
+void printStudentSubmissions(const std::vector<SubmissionRecord>& submissions) {
+    if (submissions.empty()) {
+        std::cout << "You have not submitted any work yet.\n";
+        return;
+    }
+    for (const auto& submission : submissions) {
+        std::cout << "  ID " << submission.id << " | " << submission.courseCode << " | "
+                  << submission.assignmentTitle << " | v" << submission.version
+                  << " | " << submission.status << " | submitted " << submission.submittedAt
+                  << "\n    Your document: " << submission.filePath << '\n';
+        if (submission.status == "RELEASED") {
+            std::cout << "    final " << submission.finalMark << "/" << submission.maxMark
+                      << " | feedback: " << submission.feedback << '\n';
+        }
+    }
+}
+
+const AssignmentRecord& findAssignment(const std::vector<AssignmentRecord>& assignments, int id) {
+    for (const auto& assignment : assignments) {
+        if (assignment.id == id) return assignment;
+    }
+    throw std::invalid_argument("Choose an assignment ID from the list.");
+}
+
+const SubmissionRecord& findSubmission(const std::vector<SubmissionRecord>& submissions, int id) {
+    for (const auto& submission : submissions) {
+        if (submission.id == id) return submission;
+    }
+    throw std::invalid_argument("Choose a submission ID from the list.");
 }
 
 void runAdmin(Database& database, const User& user) {
@@ -217,7 +260,8 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
     for (;;) {
         printHeader("Lecturer");
         std::cout << "1. List assigned courses\n2. List assignments\n3. Create assignment\n"
-                     "4. Grant/update extension\n5. View and mark submissions\n0. Log out\n";
+                     "4. Grant/update extension\n5. View and mark submissions\n"
+                     "6. Open an assignment brief\n0. Log out\n";
         const int choice = readInt("Choice: ");
         if (choice == 0) return;
         try {
@@ -265,21 +309,32 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
                 if (!submissions.empty()) {
                     const int id = readInt("Submission ID to mark/edit (0 to cancel): ");
                     if (id != 0) {
+                        const SubmissionRecord& submission = findSubmission(submissions, id);
+                        if (confirm("Open the student's document before marking")) {
+                            files.openDocument(submission.filePath);
+                            if (!submission.assignmentAttachmentPath.empty()) {
+                                files.openDocument(submission.assignmentAttachmentPath);
+                            }
+                        }
                         const double mark = readDouble("Raw mark: ");
                         const std::string feedback = readLine("Written feedback: ");
                         std::string reason = "Initial mark";
-                        for (const auto& submission : submissions) {
-                            if (submission.id == id && submission.status == "MARKED") {
-                                reason = readLine("Reason for mark change: ");
-                                break;
-                            }
+                        if (submission.status == "MARKED") {
+                            reason = readLine("Reason for mark change: ");
                         }
                         database.saveMark(user, id, mark, feedback, reason);
                         std::cout << "Mark saved. It is hidden until HoD release.\n";
                     }
                 }
+            } else if (choice == 6) {
+                const auto assignments = database.assignmentsForLecturer(user);
+                printAssignments(assignments, true);
+                if (!assignments.empty()) {
+                    const int id = readInt("Assignment ID to open (0 to cancel): ");
+                    if (id != 0) files.openDocument(findAssignment(assignments, id).attachmentPath);
+                }
             } else {
-                std::cout << "Choose an option from 0 to 5.\n";
+                std::cout << "Choose an option from 0 to 6.\n";
             }
         } catch (const std::exception& error) {
             std::cerr << "Action failed: " << error.what() << '\n';
@@ -287,11 +342,12 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
     }
 }
 
-void runHod(Database& database, const User& user) {
+void runHod(Database& database, const User& user, const FileStorage& files) {
     for (;;) {
         printHeader("Head of Department");
         std::cout << "1. List departmental courses\n2. View department assignments and submission counts\n"
-                     "3. Moderate marked work\n4. Release moderated work\n"
+                     "3. Moderate marked work (lecturer-marked, not yet moderated)\n"
+                     "4. Release moderated work (after option 3)\n"
                      "5. View mark audit history\n0. Log out\n";
         const int choice = readInt("Choice: ");
         if (choice == 0) return;
@@ -303,9 +359,19 @@ void runHod(Database& database, const User& user) {
             } else if (choice == 3) {
                 const auto submissions = database.submissionsForModeration(user);
                 printSubmissions(submissions);
-                if (!submissions.empty()) {
-                    const int id = readInt("Submission ID to approve/release (0 to cancel): ");
+                if (submissions.empty()) {
+                    std::cout << "No submissions are awaiting moderation. Option 4 contains work already "
+                                 "moderated; lecturer-marked work appears here in option 3.\n";
+                } else {
+                    const int id = readInt("Submission ID to moderate (0 to cancel): ");
                     if (id != 0) {
+                        const SubmissionRecord& submission = findSubmission(submissions, id);
+                        if (confirm("Open the student's document and assignment brief before moderation")) {
+                            files.openDocument(submission.filePath);
+                            if (!submission.assignmentAttachmentPath.empty()) {
+                                files.openDocument(submission.assignmentAttachmentPath);
+                            }
+                        }
                         const std::string mark = readLine("New final mark (blank to approve unchanged): ");
                         std::optional<double> revised;
                         std::string reason;
@@ -323,7 +389,10 @@ void runHod(Database& database, const User& user) {
             } else if (choice == 4) {
                 const auto submissions = database.submissionsReadyForRelease(user);
                 printSubmissions(submissions);
-                if (!submissions.empty()) {
+                if (submissions.empty()) {
+                    std::cout << "No submissions are ready for release. First moderate a lecturer-marked "
+                                 "submission using option 3.\n";
+                } else {
                     const int id = readInt("Submission ID to release (0 to cancel): ");
                     if (id != 0) {
                         database.releaseModerated(user, id);
@@ -352,11 +421,12 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
     for (;;) {
         printHeader("Student");
         std::cout << "1. View enrolled courses and assignments\n2. Submit/resubmit work\n"
-                     "3. View released marks and feedback\n0. Log out\n";
+                     "3. View released marks and feedback\n4. Open an assignment brief\n"
+                     "5. View/open my submissions\n0. Log out\n";
         const int choice = readInt("Choice: ");
         if (choice == 0) return;
         try {
-            if (choice == 1 || choice == 2) {
+            if (choice == 1 || choice == 2 || choice == 4) {
                 printCourses(database, user);
                 const auto assignments = database.assignmentsForStudent(user);
                 printAssignments(assignments);
@@ -389,6 +459,16 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
                         }
                         std::cout << '\n';
                     }
+                } else if (choice == 4 && !assignments.empty()) {
+                    const int id = readInt("Assignment ID whose brief to open (0 to cancel): ");
+                    if (id != 0) files.openDocument(findAssignment(assignments, id).attachmentPath);
+                }
+            } else if (choice == 5) {
+                const auto submissions = database.submissionsForStudent(user);
+                printStudentSubmissions(submissions);
+                if (!submissions.empty()) {
+                    const int id = readInt("Submission ID whose document to open (0 to cancel): ");
+                    if (id != 0) files.openDocument(findSubmission(submissions, id).filePath);
                 }
             } else if (choice == 3) {
                 const auto marks = database.releasedMarks(user);
@@ -399,7 +479,7 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
                               << " | feedback: " << mark.feedback << '\n';
                 }
             } else {
-                std::cout << "Choose an option from 0 to 3.\n";
+                std::cout << "Choose an option from 0 to 5.\n";
             }
         } catch (const std::exception& error) {
             std::cerr << "Action failed: " << error.what() << '\n';
@@ -439,7 +519,7 @@ int main() {
             switch (user->role()) {
                 case Role::Administrator: runAdmin(database, *user); break;
                 case Role::Lecturer: runLecturer(database, *user, files); break;
-                case Role::HeadOfDepartment: runHod(database, *user); break;
+                case Role::HeadOfDepartment: runHod(database, *user, files); break;
                 case Role::Student: runStudent(database, *user, files); break;
             }
         }

@@ -11,6 +11,8 @@ The project uses the following conventions to keep the implementation consistent
   and catch them at the console boundary.
 - Copy document uploads into application-managed storage, allow only documented formats, enforce a size
   limit, and remove staged files if their database write fails.
+- Open persisted files through the operating system's file association API; do not build shell command
+  strings from user-provided paths.
 - Enforce role permissions in the application/domain layer and repeat sensitive ownership checks in repository
   operations that modify data.
 - Keep multi-row workflow changes transactional. Append audit records in the same transaction as the mark update.

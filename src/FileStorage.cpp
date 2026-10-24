@@ -4,8 +4,14 @@
 
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <stdexcept>
 #include <system_error>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 namespace {
 
@@ -84,6 +90,25 @@ std::string FileStorage::storeDocument(const std::string& sourcePath, UploadKind
         }
     }
     throw std::runtime_error("Unable to create a unique document filename.");
+}
+
+void FileStorage::openDocument(const std::string& storedPath) const {
+    if (storedPath.empty()) throw std::invalid_argument("No document is attached to this record.");
+    std::filesystem::path path = std::filesystem::u8path(storedPath);
+    if (path.is_relative()) path = std::filesystem::current_path() / path;
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(path, error) || error) {
+        throw std::runtime_error("Document file is missing or inaccessible: " + storedPath);
+    }
+#ifdef _WIN32
+    const std::wstring nativePath = path.wstring();
+    const HINSTANCE result = ShellExecuteW(nullptr, L"open", nativePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<std::intptr_t>(result) <= 32) {
+        throw std::runtime_error("Windows could not open the document with its registered application.");
+    }
+#else
+    throw std::runtime_error("Opening documents is currently supported only on Windows.");
+#endif
 }
 
 void FileStorage::removeStoredFile(const std::string& storedPath) const {

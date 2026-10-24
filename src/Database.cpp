@@ -738,6 +738,18 @@ SubmissionReceipt Database::submit(const User& student, int assignmentId, const 
             strategy.penalty(maximumMark, lateDayCount), lateDayCount > 3, filePath};
 }
 
+std::vector<SubmissionRecord> Database::submissionsForStudent(const User& student) {
+    requirePermission(impl_->connection, student, Permission::SubmitWork);
+    std::string sql = submissionSelect;
+    sql += "LEFT JOIN marks m ON m.submission_id=s.submission_id "
+           "WHERE s.student_id=? ORDER BY a.title,s.version_no;";
+    Statement query(impl_->connection, sql);
+    query.integer(1, student.id());
+    std::vector<SubmissionRecord> records;
+    while (query.step() == SQLITE_ROW) records.push_back(readSubmission(query));
+    return records;
+}
+
 std::vector<SubmissionRecord> Database::submissionsForLecturer(const User& lecturer) {
     requirePermission(impl_->connection, lecturer, Permission::TeachCourse);
     std::string sql = submissionSelect;

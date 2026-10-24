@@ -13,6 +13,7 @@ public:
     explicit FileStorage(std::filesystem::path root = "uploads");
 
     std::string storeDocument(const std::string& sourcePath, UploadKind kind) const;
+    void openDocument(const std::string& storedPath) const;
     void removeStoredFile(const std::string& storedPath) const;
 
     static bool isSupportedDocument(const std::filesystem::path& path);

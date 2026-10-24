@@ -73,6 +73,9 @@ int main() {
         expectFailure([&] {
             fileStorage.storeDocument((testRoot / "missing.pdf").string(), UploadKind::Submission);
         }, "Missing document files must be rejected.");
+        expectFailure([&] {
+            fileStorage.openDocument((testRoot / "missing.pdf").string());
+        }, "The document viewer must report missing documents.");
 
         {
             Database database(path);
@@ -135,6 +138,11 @@ int main() {
                    submissions.front().id == secondVersion && submissions.front().filePath == secondDocument &&
                    submissions.front().assignmentAttachmentPath == storedBrief,
                    "The newest resubmission must be the active version.");
+            const auto studentSubmissions = database.submissionsForStudent(*student);
+            expect(studentSubmissions.size() == 2 &&
+                   studentSubmissions.back().studentId == student->id() &&
+                   studentSubmissions.back().filePath == secondDocument,
+                   "Students must be able to inspect their own stored submission versions.");
 
             database.saveMark(*lecturer, secondVersion, 80.0, "Good work", "ignored initial reason");
             expect(database.releasedMarks(*student).empty(), "Lecturer-marked results must remain hidden.");
@@ -150,8 +158,12 @@ int main() {
             auto pending = database.submissionsForModeration(*hod);
             expect(pending.size() == 1 && pending.front().status == "MARKED",
                    "HoD must see lecturer-marked work in their department.");
+            expect(database.submissionsReadyForRelease(*hod).empty(),
+                   "Marked work must not appear in the release queue before moderation.");
             database.moderateSubmission(*hod, secondVersion, 75.0, "Moderation adjustment");
             expect(database.releasedMarks(*student).empty(), "Moderated results remain hidden until release.");
+            expect(database.submissionsForModeration(*hod).empty(),
+                   "Moderated submissions must leave the pending moderation queue.");
             expect(database.submissionsReadyForRelease(*hod).size() == 1,
                    "Moderated results must be available in the release queue.");
             database.releaseModerated(*hod, secondVersion);

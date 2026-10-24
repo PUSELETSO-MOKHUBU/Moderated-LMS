@@ -67,7 +67,14 @@ assigned to the sample lecturer and enrolled for the sample student.
 - Assignment briefs and student submissions support PDF, DOC/DOCX, ODT, RTF, TXT/Markdown, PPT/PPTX,
   XLS/XLSX, and CSV uploads. Files are copied into `uploads/assignments` or `uploads/submissions` below
   the application working directory, capped at 25 MB, and referenced by the database. The console displays
-  both the brief and submitted-file locations for authorised users.
+  both the brief and submitted-file locations for authorised users. On Windows, the lecturer and HoD can
+  open a submission and brief before marking/moderating; the lecturer has a separate open-brief action,
+  and students can open a brief or their own submitted versions. Windows opens each file in its associated
+  application.
+
+HoD workflow: **3. Moderate marked work** lists lecturer-marked submissions. Review/approve or enter a
+revised mark and reason. Then choose **4. Release moderated work** to publish it to the student. Option 4
+intentionally does not list work that has not yet been moderated.
 
 The sample HoD is assigned to the General department. Existing demo databases are repaired on startup if
 that demo account was created without a department. Newly created HoD users must be assigned a department;
@@ -76,3 +83,5 @@ use the administrator's edit-user menu to correct an existing account's departme
 
 Date/time input is local time in `YYYY-MM-DD HH:MM` format. Submission and brief file paths may contain
 spaces; enter the full path on one line. SQLite stores the application-managed upload path and timestamp.
+Uploaded documents must be non-empty files in a supported format, under 25 MB. Opening a document
+requires a Windows application registered for that file format.
