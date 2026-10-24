@@ -1,0 +1,22 @@
+# Build output
+*.exe
+*.obj
+*.o
+*.dll
+*.so
+
+# Local database
+*.db
+*.sqlite3
+
+# IDE folders
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.log
+*.tmp
