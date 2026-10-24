@@ -73,8 +73,9 @@ assigned to the sample lecturer and enrolled for the sample student.
   application.
 
 HoD workflow: **3. Moderate marked work** lists lecturer-marked submissions. Review/approve or enter a
-revised mark and reason. Then choose **4. Release moderated work** to publish it to the student. Option 4
-intentionally does not list work that has not yet been moderated.
+revised mark and reason, then explicitly confirm whether to release the result immediately. If it is not
+released at that point, choose **4. Release moderated work** later. Students cannot see marks while a
+submission is only marked or moderated; they become visible after release.
 
 The sample HoD is assigned to the General department. Existing demo databases are repaired on startup if
 that demo account was created without a department. Newly created HoD users must be assigned a department;

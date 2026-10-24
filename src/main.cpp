@@ -139,6 +139,7 @@ void printStudentSubmissions(const std::vector<SubmissionRecord>& submissions) {
         std::cout << "You have not submitted any work yet.\n";
         return;
     }
+    bool awaitingRelease = false;
     for (const auto& submission : submissions) {
         std::cout << "  ID " << submission.id << " | " << submission.courseCode << " | "
                   << submission.assignmentTitle << " | v" << submission.version
@@ -147,7 +148,13 @@ void printStudentSubmissions(const std::vector<SubmissionRecord>& submissions) {
         if (submission.status == "RELEASED") {
             std::cout << "    final " << submission.finalMark << "/" << submission.maxMark
                       << " | feedback: " << submission.feedback << '\n';
+        } else if (submission.status == "MARKED" || submission.status == "MODERATED") {
+            awaitingRelease = true;
         }
+    }
+    if (awaitingRelease) {
+        std::cout << "Marks for work still marked or moderated are hidden until the HoD releases them "
+                     "using option 4.\n";
     }
 }
 
@@ -383,7 +390,13 @@ void runHod(Database& database, const User& user, const FileStorage& files) {
                             reason = readLine("Reason for mark change: ");
                         }
                         database.moderateSubmission(user, id, revised, reason);
-                        std::cout << "Moderation saved. Release it from the release queue when ready.\n";
+                        if (confirm("Release this moderated result to the student now")) {
+                            database.releaseModerated(user, id);
+                            std::cout << "Moderation saved and result released to the student.\n";
+                        } else {
+                            std::cout << "Moderation saved. The result remains hidden until you release it "
+                                         "using option 4.\n";
+                        }
                     }
                 }
             } else if (choice == 4) {
@@ -461,7 +474,14 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
                     }
                 } else if (choice == 4 && !assignments.empty()) {
                     const int id = readInt("Assignment ID whose brief to open (0 to cancel): ");
-                    if (id != 0) files.openDocument(findAssignment(assignments, id).attachmentPath);
+                    if (id != 0) {
+                        const AssignmentRecord& assignment = findAssignment(assignments, id);
+                        if (assignment.attachmentPath.empty()) {
+                            std::cout << "No document is attached to this assignment.\n";
+                        } else {
+                            files.openDocument(assignment.attachmentPath);
+                        }
+                    }
                 }
             } else if (choice == 5) {
                 const auto submissions = database.submissionsForStudent(user);
@@ -472,7 +492,10 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
                 }
             } else if (choice == 3) {
                 const auto marks = database.releasedMarks(user);
-                if (marks.empty()) std::cout << "No results have been released.\n";
+                if (marks.empty()) {
+                    std::cout << "No results have been released. Marks remain hidden until the HoD releases "
+                                 "moderated work; check option 5 for each submission's status.\n";
+                }
                 for (const auto& mark : marks) {
                     std::cout << mark.courseCode << " | " << mark.assignmentTitle << " | "
                               << std::fixed << std::setprecision(2) << mark.finalMark << "/" << mark.maxMark
