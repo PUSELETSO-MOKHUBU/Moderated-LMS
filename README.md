@@ -23,6 +23,18 @@ ctest --test-dir build -C Release --output-on-failure
 
 On Windows, `build.bat` performs these steps and launches the console application after successful tests.
 
+## Verification and validation
+
+The automated suite uses Catch2 and CTest. The [Phase 5 test plan](docs/PHASE_5_TEST_PLAN.md) maps unit,
+integration, system, and acceptance tests to requirements and V-Model levels. The [test results](docs/PHASE_5_TEST_RESULTS.md),
+[coverage report](docs/PHASE_5_COVERAGE.md), and [defect log](docs/PHASE_5_DEFECT_LOG.md) record verification evidence.
+CI runs the GCC static analyzer, builds the project, executes the suite on pushes and pull requests, and enforces
+at least 70% line coverage of business-logic sources (excluding the console presentation layer). See the
+[Phase 6 configuration strategy](docs/PHASE_6_CONFIGURATION_MANAGEMENT.md), [static-analysis report](docs/PHASE_6_STATIC_ANALYSIS.md),
+[code metrics](docs/PHASE_6_CODE_METRICS.md), and [self-review record](docs/PHASE_6_SELF_REVIEW.md).
+Configure with `-DENABLE_COVERAGE=ON` to reproduce the coverage run locally; this option requires GCC or Clang
+and `gcovr`. Configure with `-DENABLE_GCC_ANALYZER=ON` to run GCC's analyzer and promote warnings to errors.
+
 ## Architecture and security
 
 The application uses a layered structure: console presentation, polymorphic role/domain types, a
