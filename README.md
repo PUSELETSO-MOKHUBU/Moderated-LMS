@@ -23,6 +23,10 @@ ctest --test-dir build -C Release --output-on-failure
 
 On Windows, `build.bat` performs these steps and launches the console application after successful tests.
 
+## Deployment and user guides
+
+The [UML deployment diagram](docs/diagrams/DEPLOYMENT_DIAGRAM.puml) shows the v1.0 single-workstation architecture. Use the [technician installation guide](docs/INSTALLATION_GUIDE.md) to build, install, configure the writable data folder, and set up backups. Role-specific operating instructions are available for the [Administrator](docs/USER_MANUAL_ADMINISTRATOR.md), [Lecturer](docs/USER_MANUAL_LECTURER.md), [Head of Department](docs/USER_MANUAL_HOD.md), and [Student](docs/USER_MANUAL_STUDENT.md). See the [v1.0 release notes](docs/RELEASE_NOTES_v1.0.md).
+
 ## Verification and validation
 
 The automated suite uses Catch2 and CTest. The [Phase 5 test plan](docs/PHASE_5_TEST_PLAN.md) maps unit,
