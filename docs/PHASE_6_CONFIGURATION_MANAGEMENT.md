@@ -29,18 +29,18 @@ Use small commits with an imperative subject and a conventional scope, such as `
 ```powershell
 git switch main
 git pull --ff-only
-git tag -a v1.0 -m "Moderated LMS v1.0"
-git push origin v1.0
+git tag -a v0.6.0 -m "Moderated LMS Phase 6 QA milestone"
+git push origin v0.6.0
 ```
 
-Do not tag a release before the applicable phase's acceptance criteria pass. No release tag is claimed for Phase 6: the assignment explicitly reserves tag `v1.0` for Phase 7.
+Create the `v0.6.0` Phase 6 milestone tag only after the PR is merged and the QA acceptance criteria pass. Reserve `v1.0` for the Phase 7 project release. No tag is created on the unmerged feature branch.
 
 ## CI evidence and limitations
 
 The branch was pushed on 2026-10-31. The first hosted run failed because `Database.cpp` used Windows-only `localtime_s`; the code now selects the thread-safe Windows or POSIX local-time API as appropriate. The corrected workflow completed successfully:
 
-- **Run:** [C++ CI and Quality Gates — run 2](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41245914776)
+- **Run:** [C++ CI and Quality Gates — run 3](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41246448511)
 - **Result:** build with GCC static analysis, all tests, and the 70% coverage gate passed.
-- **Artifact:** [CI quality reports](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41245914776/artifacts/13059567021)
+- **Artifact:** [CI quality reports](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41246448511/artifacts/13059745090)
 
-The topic branch is pushed but has not yet been merged; no pull request or release tag exists. Open a PR from `feature/phase-6-qa` to `main`, review the diff (which includes the three earlier unpushed project commits), and merge after review. After the applicable release is approved on `main`, create and push its annotated version tag; reserve `v1.0` for the Phase 7 release.
+The topic branch is pushed but has not yet been merged; no pull request or release tag exists. Open a PR from `feature/phase-6-qa` to `main`, review the diff (which includes the three earlier unpushed project commits), and merge after review. Then create and push the annotated `v0.6.0` Phase 6 milestone tag using the command above. Reserve `v1.0` for the Phase 7 project release.
