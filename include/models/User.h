@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 enum class Role {
@@ -9,27 +10,67 @@ enum class Role {
     Student
 };
 
+enum class Permission {
+    ManageUsers,
+    ManageCourses,
+    TeachCourse,
+    ModerateDepartment,
+    SubmitWork,
+    ViewReleasedMarks
+};
+
 class User {
 public:
-    User();
-    User(int id, std::string username, std::string passwordHash, Role role, int departmentId = -1);
+    User(int id, std::string username, std::string passwordHash, int departmentId = -1);
+    virtual ~User() = default;
 
-    int id() const;
-    const std::string& username() const;
-    const std::string& passwordHash() const;
-    Role role() const;
-    int departmentId() const;
-
-    void setId(int id);
-    void setUsername(const std::string& username);
-    void setPasswordHash(const std::string& passwordHash);
-    void setRole(Role role);
-    void setDepartmentId(int departmentId);
+    int id() const noexcept;
+    const std::string& username() const noexcept;
+    const std::string& passwordHash() const noexcept;
+    int departmentId() const noexcept;
+    virtual Role role() const noexcept = 0;
+    virtual bool can(Permission permission) const noexcept = 0;
 
 private:
     int id_;
     std::string username_;
     std::string passwordHash_;
-    Role role_;
     int departmentId_;
 };
+
+class Administrator final : public User {
+public:
+    using User::User;
+    Role role() const noexcept override;
+    bool can(Permission permission) const noexcept override;
+};
+
+class Lecturer final : public User {
+public:
+    using User::User;
+    Role role() const noexcept override;
+    bool can(Permission permission) const noexcept override;
+};
+
+class HeadOfDepartment final : public User {
+public:
+    using User::User;
+    Role role() const noexcept override;
+    bool can(Permission permission) const noexcept override;
+};
+
+class Student final : public User {
+public:
+    using User::User;
+    Role role() const noexcept override;
+    bool can(Permission permission) const noexcept override;
+};
+
+class UserFactory {
+public:
+    static std::unique_ptr<User> create(int id, const std::string& username,
+                                        const std::string& passwordHash,
+                                        const std::string& role, int departmentId);
+};
+
+std::string roleToText(Role role);

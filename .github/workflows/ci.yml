@@ -1,0 +1,57 @@
+name: C++ CI and Quality Gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests-and-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build and coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential cmake libsqlite3-dev libssl-dev
+          python -m pip install --upgrade gcovr
+
+      - name: Configure
+        run: cmake -S . -B build -DBUILD_TESTING=ON -DENABLE_COVERAGE=ON -DENABLE_GCC_ANALYZER=ON -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build with GCC static analysis
+        run: |
+          set -o pipefail
+          cmake --build build --parallel 2 2>&1 | tee gcc-analyzer.log
+
+      - name: Run unit, integration, and acceptance tests
+        run: ctest --test-dir build --output-on-failure --output-junit test-results.xml
+
+      - name: Enforce and report business-logic line coverage
+        run: >-
+          gcovr --root . --filter 'src/' --exclude 'src/main.cpp'
+          --print-summary --fail-under-line 70
+          --xml-pretty --xml coverage.xml
+          --html-details coverage.html
+
+      - name: Preserve test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-quality-reports
+          path: |
+            test-results.xml
+            coverage.xml
+            coverage.html
+            coverage.*.html
+            gcc-analyzer.log
+          if-no-files-found: warn
