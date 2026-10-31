@@ -21,4 +21,4 @@ An isolated console smoke check also passed: a lecturer created an assignment an
 
 ## Hosted release checks
 
-The hosted GitHub Actions run, coverage artifact, merged commit and `v1.1` tag are added here after the release-candidate PR passes and is merged. A v1.1 release is not complete until those hosted checks are green.
+The v1.1 pull request's hosted [GitHub Actions quality check](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41253618264) passed, including the GCC analyzer build, complete CTest suite and coverage gate. Its [quality-report artifact](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41253618264/artifacts/13062576458) is retained by GitHub. The check is for implementation commit `ff699d1`; the follow-up documentation-only commit and post-merge `main` run must also pass before the merged commit receives the `v1.1` tag.
