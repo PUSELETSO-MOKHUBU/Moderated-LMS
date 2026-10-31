@@ -137,6 +137,14 @@ void requireText(const std::string& value, const std::string& field) {
     }
 }
 
+bool toLocalTime(const std::time_t& timestamp, std::tm& result) {
+#if defined(_WIN32)
+    return localtime_s(&result, &timestamp) == 0;
+#else
+    return localtime_r(&timestamp, &result) != nullptr;
+#endif
+}
+
 std::tm parseDateTime(const std::string& value) {
     std::tm parsed = {};
     std::istringstream input(value);
@@ -152,7 +160,9 @@ std::tm parseDateTime(const std::string& value) {
         throw std::invalid_argument("Date/time is invalid.");
     }
     std::tm checked = {};
-    localtime_s(&checked, &timestamp);
+    if (!toLocalTime(timestamp, checked)) {
+        throw std::invalid_argument("Date/time is invalid.");
+    }
     if (checked.tm_year != original.tm_year || checked.tm_mon != original.tm_mon ||
         checked.tm_mday != original.tm_mday || checked.tm_hour != original.tm_hour ||
         checked.tm_min != original.tm_min) {
@@ -184,7 +194,9 @@ std::time_t toTimestamp(std::string value) {
 std::string currentDateTime() {
     const std::time_t now = std::time(nullptr);
     std::tm local = {};
-    localtime_s(&local, &now);
+    if (!toLocalTime(now, local)) {
+        throw std::runtime_error("Unable to determine the local date/time.");
+    }
     std::ostringstream output;
     output << std::put_time(&local, "%Y-%m-%dT%H:%M:%S");
     return output.str();
