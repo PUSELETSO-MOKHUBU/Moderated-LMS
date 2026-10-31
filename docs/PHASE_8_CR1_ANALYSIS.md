@@ -32,7 +32,8 @@ The original Phase 2 requirements and Phase 3 diagram files are not checked into
 | Database | `extensions` | Existing per-student records remain intact. The effective deadline is the later of original, class-wide and individual deadlines. |
 | Database | `submissions` | Active `SUBMITTED`/`LATE` status is refreshed after a class deadline is granted or updated. Marked/released work is not reclassified. |
 | Database | `marks` | No schema change. A class extension is rejected once any active result for that assignment has been marked/moderated/released, preserving the existing protection against changing a marked result's deadline. |
-| Tests | `tests/test_lms.cpp` | Extend the database-backed role workflow with scope, authorization, enrollment, precedence, no-shortening, marked-result, status-refresh and mark-calculation assertions. |
+| Tests | Existing CTest case `Role-scoped LMS workflow persists and releases moderated results`; CR1 scenario AC-10 | Extend this integration/system/acceptance case with scope, authorization, enrollment, precedence, valid update/no-shortening, marked-result, status-refresh, resubmission and mark-calculation assertions. |
+| Tests | Existing CTest cases `Late-penalty rules cover equivalence classes and boundaries`, `Role permissions and factory preserve role boundaries`, `Domain records initialize, expose, and update their values`, `Password hashing rejects invalid input and verifies encoded hashes`, and `Document storage enforces supported formats and size boundaries` | No test logic changes; all remain required regression cases and were rerun with the CR1 workflow. |
 | Tests/docs | `docs/PHASE_5_TEST_PLAN.md` | Add AC-10 and trace the changed requirements and regression behavior to executable checks. |
 
 ## Behavior and data decisions

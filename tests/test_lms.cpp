@@ -442,6 +442,16 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
             }
             expect(classDeadlineVisible,
                    "A newly enrolled student must see the active class-wide extension.");
+            database.grantClassExtension(*lecturer, extensionAssignment,
+                                         "2099-12-25 23:59", "Later class extension");
+            bool updatedClassDeadlineVisible = false;
+            for (const auto& assignment : database.assignmentsForStudent(*updatedStudent)) {
+                if (assignment.id == extensionAssignment) {
+                    updatedClassDeadlineVisible = assignment.effectiveDeadline == "2099-12-25T23:59:00";
+                }
+            }
+            expect(updatedClassDeadlineVisible,
+                   "Updating a class extension to a later date must update the class deadline.");
             database.grantExtension(*lecturer, extensionAssignment, student->id(),
                                     "2099-12-30 23:59", "Longer individual extension");
             bool individualDeadlineWins = false;
@@ -454,7 +464,7 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                    "The later individual deadline must remain effective over the class deadline.");
             expectFailure([&] {
                 database.grantClassExtension(*lecturer, extensionAssignment,
-                                             "2099-12-19 23:59", "Shorter class deadline");
+                                             "2099-12-24 23:59", "Shorter class deadline");
             }, "Updating a class extension must not shorten its existing deadline.");
 
             const std::string firstDocument = fileStorage.storeDocument(sourceDocument.string(), UploadKind::Submission);

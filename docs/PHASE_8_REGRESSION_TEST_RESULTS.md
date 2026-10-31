@@ -4,7 +4,7 @@
 
 | Environment | Command | Result |
 |---|---|---|
-| Windows x64, GCC 14.2.0, CMake 4.4.4; CMake configured with `BUILD_TESTING=ON`, `ENABLE_GCC_ANALYZER=ON` and `ENABLE_COVERAGE=ON` | `cmake --build build --parallel`; `ctest --test-dir build --output-on-failure` | Build passed. All 6/6 CTest cases passed (100%); total test time 14.25 seconds. |
+| Windows x64, GCC 14.2.0, CMake 4.4.4; CMake configured with `BUILD_TESTING=ON`, `ENABLE_GCC_ANALYZER=ON` and `ENABLE_COVERAGE=ON` | `cmake --build build-phase5-gcc --parallel`; `ctest --test-dir build-phase5-gcc --output-on-failure` | Build passed. All 6/6 CTest cases passed (100%); total test time 17.46 seconds. |
 
 The existing test cases were rerun, not replaced. The role-scoped LMS workflow case now also exercises CR1 (AC-10): lecturer authorization and course scope, an unenrolled student's isolation and later enrolment, class/individual deadline precedence, rejection of a shortened class deadline and post-marking change, active status refresh, resubmission using the class deadline, and mark calculation using the effective deadline.
 
