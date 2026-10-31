@@ -15,10 +15,10 @@ python -m lizard src include tests -l cpp -C 999
 
 | Scope | Files | Non-comment source lines (NLOC) | Functions |
 |---|---:|---:|---:|
-| Production C++ implementation (`src/`) | 6 | 1,737 | 161 |
+| Production C++ implementation (`src/`) | 6 | 1,745 | 162 |
 | Public interfaces (`include/`) | 9 | 328 | 1 |
 | Automated tests (`tests/`) | 1 | 491 | 9 |
-| **Total measured** | **16** | **2,556** | **171** |
+| **Total measured** | **16** | **2,564** | **172** |
 
 ## Key complexity measures
 
@@ -34,7 +34,7 @@ python -m lizard src include tests -l cpp -C 999
 | `Database::saveMark` | `src/Database.cpp:766` | 11 | 56 | Transactional state/mark/audit workflow; retain focused regression coverage. |
 | Integration/acceptance `TEST_CASE` | `tests/test_lms.cpp:254` | 43 | 259 | One long end-to-end fixture is complex; split into smaller scenario fixtures when expanding acceptance coverage. |
 
-The mean CCN across measured functions was 3.32. The elevated console-menu functions and large integration case are documented refactoring risks, not analyzer-reported defects. Do not lower test coverage or weaken authorization checks to reduce a metric.
+The mean CCN across measured functions was 3.3. The elevated console-menu functions and large integration case are documented refactoring risks, not analyzer-reported defects. Do not lower test coverage or weaken authorization checks to reduce a metric.
 
 ## Interpretation and follow-up
 

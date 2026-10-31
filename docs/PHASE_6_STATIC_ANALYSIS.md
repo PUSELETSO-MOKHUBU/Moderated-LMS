@@ -20,6 +20,8 @@ cmake --build build-qa --parallel 4
 
 **Result:** the MSYS2 GCC 14.2.0 application and library build completed successfully with the analyzer enabled. It emitted 38 `analyzer-use-of-uninitialized-value` diagnostic events, traced to six call paths in `FileStorage.cpp` (`std::filesystem::u8path`/path conversion) and `main.cpp` (standard-library string operations). I reproduced this diagnostic with minimal programs containing only `std::filesystem::u8path` and standard-library string concatenation; traces terminate in MinGW libstdc++ internals. This known GCC 14.2 standard-library false-positive category remains visible in compiler output and the CI analyzer log; all other compiler/analyzer findings remain errors. No actionable project-code analyzer finding remained after manual review.
 
+The first hosted Linux build also exposed a portability defect: `Database.cpp` used the Windows-only `localtime_s` API. It was replaced with a small platform-specific wrapper using `localtime_s` on Windows and `localtime_r` on POSIX, with conversion failures reported explicitly. The corrected hosted GCC analyzer build, tests, and coverage gate passed in [Actions run 2](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41245914776).
+
 | Finding | Severity | Disposition |
 |---|---|---|
 | 38 `analyzer-use-of-uninitialized-value` diagnostic events in standard-library path/string call paths | False positive (verified with minimal reproducers) | Kept visible as warnings for manual triage; all other GCC compiler and analyzer diagnostics remain errors. |

@@ -11,16 +11,16 @@
 
 ## Measured result
 
-**Measured result: 91.9% (852/927 executable lines), passing the 70% requirement by 21.9 percentage points.** The instrumented six-test run used GCC 14.2.0 and gcovr 8.8 on Windows x64. The report also measured 99.3% function coverage and 46.9% branch coverage; only line coverage has a required threshold.
+**Measured result: 91.7% (854/931 executable lines), passing the 70% requirement by 21.7 percentage points.** The instrumented six-test run used GCC 14.2.0 and gcovr 8.8 on Windows x64 after the cross-platform date-time fix. The report also measured 99.3% function coverage and 46.9% branch coverage; only line coverage has a required threshold.
 
 | Source file | Lines covered | Lines valid | Line coverage |
 |---|---:|---:|---:|
-| `src/Database.cpp` | 614 | 669 | 91.8% |
+| `src/Database.cpp` | 616 | 673 | 91.5% |
 | `src/FileStorage.cpp` | 67 | 77 | 87.0% |
 | `src/LatePenaltyStrategy.cpp` | 9 | 9 | 100.0% |
 | `src/PasswordHasher.cpp` | 67 | 77 | 87.0% |
 | `src/models/DomainModels.cpp` | 95 | 95 | 100.0% |
-| **Business-logic total** | **852** | **927** | **91.9% (threshold: >= 70%)** |
+| **Business-logic total** | **854** | **931** | **91.7% (threshold: >= 70%)** |
 
 ## Reproduction
 
@@ -30,4 +30,4 @@ Run the CMake configure, build, and CTest commands in `PHASE_5_TEST_PLAN.md`, th
 gcovr --root . --filter 'src/' --exclude 'src/main.cpp' --print-summary --fail-under-line 70 --xml-pretty --xml coverage.xml --html-details coverage.html
 ```
 
-The local generated XML and HTML report are in the ignored `build-phase5-gcc` directory. CI retains its generated XML and HTML reports as an artifact, including per-file and aggregate coverage. Attach the corresponding CI artifact after the workflow's first remote run.
+The local generated XML and HTML report are in the ignored `build-phase5-gcc` directory. CI retains its generated XML and HTML reports as an artifact, including per-file and aggregate coverage, in [successful hosted run 2](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41245914776).

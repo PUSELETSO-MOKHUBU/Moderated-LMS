@@ -5,7 +5,8 @@
 | Run | Environment | Command / evidence | Result |
 |---|---|---|---|
 | Baseline (before Catch2 migration) | Windows, existing MinGW build | `ctest --test-dir build --output-on-failure` | Passed: 1/1 existing workflow test. This is baseline evidence only, not the final Phase 5 result. |
-| Final automated run | Windows x64; GCC 14.2.0 (MSYS2 UCRT64); CMake/CTest 4.4.4; gcovr 8.8; 2026-10-31. | Coverage-instrumented Debug build; `ctest --test-dir build-phase5-gcc --output-on-failure --output-junit build-phase5-gcc/test-results.xml`. | Passed: 6/6 discovered test cases; 100% passed. |
+| Final automated run | Windows x64; GCC 14.2.0 (MSYS2 UCRT64); CMake/CTest 4.4.4; gcovr 8.8; 2026-10-31. | Coverage-instrumented Debug build; `ctest --test-dir build-phase5-gcc --output-on-failure --output-junit build-phase5-gcc/test-results.xml`. | Passed: 6/6 discovered test cases; 100% passed; current measured line coverage 91.7%. |
+| Hosted CI run 2 | GitHub Actions, Ubuntu; 2026-10-31. | [Run 2](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41245914776); GCC analyzer build, CTest, coverage gate and report upload. | Passed: all workflow steps; downloadable [quality reports](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41245914776/artifacts/13059567021). |
 
 ## Test-case results
 
@@ -20,4 +21,4 @@
 
 ## Exit assessment
 
-All six local test cases passed and measured business-logic coverage exceeds 70%. The GitHub Actions workflow is configured but has not yet run remotely; attach its first successful run and report artifact after the branch is pushed.
+All six local test cases and hosted CI checks passed, and measured business-logic coverage exceeds 70%. The hosted CI report artifact is linked above.
