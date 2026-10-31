@@ -114,6 +114,8 @@ public:
                          const std::string& attachmentPath = "");
     void grantExtension(const User& actor, int assignmentId, int studentId,
                         const std::string& newDeadline, const std::string& reason);
+    void grantClassExtension(const User& actor, int assignmentId,
+                             const std::string& newDeadline, const std::string& reason);
     std::vector<AssignmentRecord> assignmentsForStudent(const User& student);
     SubmissionReceipt submit(const User& student, int assignmentId, const std::string& filePath);
     std::vector<SubmissionRecord> submissionsForStudent(const User& student);

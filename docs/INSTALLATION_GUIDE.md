@@ -1,11 +1,11 @@
-# Moderated LMS v1.0 - Technician Installation Guide
+# Moderated LMS v1.1 - Technician Installation Guide
 
-This guide installs the tested C++ application on one school-owned 64-bit Windows 10/11 workstation. The v1.0 system is a local console application backed by SQLite; it is not a web server and does not support multiple workstation clients sharing a live database.
+This guide installs the tested C++ application on one school-owned 64-bit Windows 10/11 workstation. The v1.1 system is a local console application backed by SQLite; it is not a web server and does not support multiple workstation clients sharing a live database.
 
 ## 1. Requirements
 
 - A supported, updated Windows 10/11 x64 computer.
-- An approved copy of the `v1.0` source repository and permission to install software.
+- An approved copy of the `v1.1` source repository and permission to install software.
 - Internet access during setup to obtain the compiler dependencies and Catch2 test dependency.
 - MSYS2 with its UCRT64 environment, Git, CMake, GCC, SQLite 3 and OpenSSL 3.
 - A writable local data folder with sufficient space for the database and uploaded documents.
@@ -36,7 +36,15 @@ Keep the MSYS2 UCRT64 runtime directory available when launching the executable 
 
 ## 3. Obtain, build and test the release
 
-Use the school-approved repository access process to obtain the `v1.0` release source. In an **MSYS2 UCRT64** terminal, change to the checked-out project directory and run:
+In **MSYS2 UCRT64**, obtain the source and check out the release tag:
+
+```sh
+git clone https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS.git
+cd Moderated-LMS
+git checkout v1.1
+```
+
+If GitHub requests authentication, sign in with an account authorized for the repository; never put a password or access token in the clone command. Then configure and build from the checked-out project directory:
 
 ```sh
 cmake -S . -B build -G "MinGW Makefiles" -DBUILD_TESTING=ON
@@ -48,7 +56,7 @@ The configure step downloads Catch2 when it is not already cached, so first-time
 
 ## 4. Set up application and data folders
 
-1. Install the checked-out release under a read-only application folder, for example `C:\SchoolApps\ModeratedLMS-v1.0`. Keep the executable and its required runtime DLLs together, or ensure the MSYS2 UCRT64 `bin` folder is on the launch environment's `PATH`.
+1. Install the checked-out release under a read-only application folder, for example `C:\SchoolApps\ModeratedLMS-v1.1`. Keep the executable and its required runtime DLLs together, or ensure the MSYS2 UCRT64 `bin` folder is on the launch environment's `PATH`.
 2. Create a separate writable data folder, for example `C:\ProgramData\ModeratedLMS\Data`.
 3. Grant **Modify** permission on the data folder only to the Windows account or school-managed group authorized to use the LMS. Avoid granting access to `Everyone`.
 4. Create a Windows shortcut to `ModeratedLMS.exe`. In its shortcut properties set **Start in** to the data folder (for example `C:\ProgramData\ModeratedLMS\Data`). This is essential: the application creates `lms.db` and its `uploads` folders relative to its working directory.

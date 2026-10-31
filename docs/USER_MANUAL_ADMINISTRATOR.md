@@ -1,4 +1,4 @@
-# Administrator User Manual - v1.0
+# Administrator User Manual - v1.1
 
 The administrator configures accounts, departments, courses and enrolments. Administrators do not perform marking or moderation.
 

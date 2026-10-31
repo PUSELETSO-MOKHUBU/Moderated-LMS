@@ -99,8 +99,11 @@ void printAssignments(const std::vector<AssignmentRecord>& assignments, bool sho
     for (const auto& assignment : assignments) {
         std::cout << "  ID " << assignment.id << " | " << assignment.courseCode << " | "
                   << assignment.title << " | deadline " << assignment.deadline
-                  << " | effective " << assignment.effectiveDeadline
-                  << " | max " << assignment.maxMark;
+                  << " | effective " << assignment.effectiveDeadline;
+        if (assignment.effectiveDeadline != assignment.deadline) {
+            std::cout << " (extension applied)";
+        }
+        std::cout << " | max " << assignment.maxMark;
         if (showCounts) {
             std::cout << " | active submissions " << assignment.submissionCount
                       << " | marked/released " << assignment.markedCount;
@@ -304,12 +307,21 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
             } else if (choice == 4) {
                 printCourses(database, user);
                 printAssignments(database.assignmentsForLecturer(user));
+                const int scope = readInt("Extension scope (1 whole class, 2 individual student, 0 cancel): ");
+                if (scope == 0) continue;
                 const int assignment = readInt("Assignment ID: ");
-                const int student = readInt("Student user ID: ");
                 const std::string deadline = readLine("Revised deadline (YYYY-MM-DD HH:MM): ");
                 const std::string reason = readLine("Reason: ");
-                database.grantExtension(user, assignment, student, deadline, reason);
-                std::cout << "Extension saved.\n";
+                if (scope == 1) {
+                    database.grantClassExtension(user, assignment, deadline, reason);
+                    std::cout << "Class extension saved for enrolled students.\n";
+                } else if (scope == 2) {
+                    const int student = readInt("Student user ID: ");
+                    database.grantExtension(user, assignment, student, deadline, reason);
+                    std::cout << "Individual extension saved.\n";
+                } else {
+                    throw std::invalid_argument("Choose 1 for the whole class, 2 for an individual, or 0 to cancel.");
+                }
             } else if (choice == 5) {
                 const auto submissions = database.submissionsForLecturer(user);
                 printSubmissions(submissions);

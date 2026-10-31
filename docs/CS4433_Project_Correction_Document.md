@@ -86,7 +86,7 @@ requirements for all four roles:
 
 - Administrators create, edit, disable and list users; maintain departments and courses; assign lecturers; and
   enrol students.
-- Lecturers manage assignments for assigned courses, grant individual extensions, view active submissions, and
+- Lecturers manage assignments for assigned courses, grant individual or class-wide extensions, view active submissions, and
   mark or revise work with feedback.
 - Students see enrolled courses and assignments, submit or resubmit versioned work, and see only their own
   released marks.
@@ -96,8 +96,8 @@ requirements for all four roles:
 An abstract polymorphic `User` hierarchy and `UserFactory` implement role creation. `StandardLatePenalty`
 implements the Strategy pattern. `Database` encapsulates the Repository/DAO operations and SQLite persistence.
 The late policy deducts 10% of the maximum mark per day for up to three days; later work receives zero unless
-an individual extension changes the effective deadline. Resubmission is allowed only before that effective
-deadline, and prior versions remain stored.
+an individual or class-wide extension changes the effective deadline. Resubmission is allowed only before
+that effective deadline, and prior versions remain stored.
 
 OpenSSL PBKDF2-HMAC-SHA-256 with a random salt is used for password storage. Startup upgrades older
 unencoded password rows to salted hashes. Mark changes and audit inserts occur in the same transaction, and

@@ -278,6 +278,9 @@ void Database::initializeSchema() {
         "student_id INTEGER NOT NULL, new_deadline TEXT NOT NULL, reason TEXT NOT NULL, granted_by INTEGER NOT NULL, "
         "UNIQUE(assignment_id,student_id), FOREIGN KEY(assignment_id) REFERENCES assignments(assignment_id), "
         "FOREIGN KEY(student_id) REFERENCES users(user_id), FOREIGN KEY(granted_by) REFERENCES users(user_id));"
+        "CREATE TABLE IF NOT EXISTS class_extensions (assignment_id INTEGER PRIMARY KEY, new_deadline TEXT NOT NULL, "
+        "reason TEXT NOT NULL, granted_by INTEGER NOT NULL, FOREIGN KEY(assignment_id) REFERENCES assignments(assignment_id), "
+        "FOREIGN KEY(granted_by) REFERENCES users(user_id));"
         "CREATE TABLE IF NOT EXISTS submissions (submission_id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL, "
         "student_id INTEGER NOT NULL, version_no INTEGER NOT NULL CHECK(version_no>=1), submitted_at TEXT NOT NULL, "
         "status TEXT NOT NULL CHECK(status IN ('SUBMITTED','LATE','MARKED','MODERATED','RELEASED')), "
@@ -672,21 +675,81 @@ void Database::grantExtension(const User& actor, int assignmentId, int studentId
     upsert.text(4, reason);
     upsert.integer(5, actor.id());
     checkDone(upsert, impl_->connection);
-    Statement refreshStatus(impl_->connection, "UPDATE submissions SET status=CASE WHEN submitted_at<=? "
+    Statement refreshStatus(impl_->connection, "UPDATE submissions SET status=CASE WHEN submitted_at<=("
+                                               "SELECT MAX(a.deadline,COALESCE(ce.new_deadline,a.deadline),"
+                                               "COALESCE(e.new_deadline,a.deadline)) FROM assignments a "
+                                               "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
+                                               "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id "
+                                               "AND e.student_id=submissions.student_id "
+                                               "WHERE a.assignment_id=submissions.assignment_id) "
                                                "THEN 'SUBMITTED' ELSE 'LATE' END WHERE assignment_id=? "
                                                "AND student_id=? AND is_active=1 AND status IN ('SUBMITTED','LATE');");
-    refreshStatus.text(1, normalizedDeadline);
-    refreshStatus.integer(2, assignmentId);
-    refreshStatus.integer(3, studentId);
+    refreshStatus.integer(1, assignmentId);
+    refreshStatus.integer(2, studentId);
     checkDone(refreshStatus, impl_->connection);
+    transaction.commit();
+}
+
+void Database::grantClassExtension(const User& actor, int assignmentId,
+                                   const std::string& newDeadline, const std::string& reason) {
+    requirePermission(impl_->connection, actor, Permission::TeachCourse);
+    requireText(reason, "Extension reason");
+    const std::string normalizedDeadline = normalizeDateTime(newDeadline);
+    sqlite3* db = impl_->connection;
+    Transaction transaction(db);
+    Statement assignment(db, "SELECT a.deadline,ce.new_deadline FROM assignments a "
+                             "JOIN lecturer_courses lc ON lc.course_id=a.course_id "
+                             "AND lc.lecturer_id=? LEFT JOIN class_extensions ce "
+                             "ON ce.assignment_id=a.assignment_id WHERE a.assignment_id=?;");
+    assignment.integer(1, actor.id());
+    assignment.integer(2, assignmentId);
+    if (assignment.step() != SQLITE_ROW) {
+        throw std::runtime_error("Assignment not found or not assigned to you.");
+    }
+    if (toTimestamp(normalizedDeadline) <= toTimestamp(assignment.stringColumn(0))) {
+        throw std::invalid_argument("An extension must be later than the original deadline.");
+    }
+    if (!assignment.isNull(1) &&
+        toTimestamp(normalizedDeadline) < toTimestamp(assignment.stringColumn(1))) {
+        throw std::invalid_argument("A class extension cannot shorten the existing class deadline.");
+    }
+
+    Statement marked(db, "SELECT 1 FROM submissions WHERE assignment_id=? AND is_active=1 "
+                         "AND status IN ('MARKED','MODERATED','RELEASED') LIMIT 1;");
+    marked.integer(1, assignmentId);
+    if (marked.step() == SQLITE_ROW) {
+        throw std::runtime_error("A class extension cannot change an already marked result.");
+    }
+
+    Statement upsert(db, "INSERT INTO class_extensions(assignment_id,new_deadline,reason,granted_by) "
+                         "VALUES(?,?,?,?) ON CONFLICT(assignment_id) DO UPDATE SET "
+                         "new_deadline=excluded.new_deadline,reason=excluded.reason,granted_by=excluded.granted_by;");
+    upsert.integer(1, assignmentId);
+    upsert.text(2, normalizedDeadline);
+    upsert.text(3, reason);
+    upsert.integer(4, actor.id());
+    checkDone(upsert, db);
+
+    Statement refreshStatus(db, "UPDATE submissions SET status=CASE WHEN submitted_at<=("
+                                "SELECT MAX(a.deadline,ce.new_deadline,COALESCE(e.new_deadline,a.deadline)) "
+                                "FROM assignments a JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
+                                "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id "
+                                "AND e.student_id=submissions.student_id "
+                                "WHERE a.assignment_id=submissions.assignment_id) "
+                                "THEN 'SUBMITTED' ELSE 'LATE' END WHERE assignment_id=? "
+                                "AND is_active=1 AND status IN ('SUBMITTED','LATE');");
+    refreshStatus.integer(1, assignmentId);
+    checkDone(refreshStatus, db);
     transaction.commit();
 }
 
 std::vector<AssignmentRecord> Database::assignmentsForStudent(const User& student) {
     requirePermission(impl_->connection, student, Permission::SubmitWork);
     Statement query(impl_->connection, "SELECT a.assignment_id,a.course_id,c.code,a.title,a.deadline,"
-                                       "COALESCE(e.new_deadline,a.deadline),a.max_mark,a.attachment_path FROM assignments a "
+                                       "MAX(a.deadline,COALESCE(ce.new_deadline,a.deadline),"
+                                       "COALESCE(e.new_deadline,a.deadline)),a.max_mark,a.attachment_path FROM assignments a "
                                        "JOIN courses c ON c.course_id=a.course_id JOIN enrolments en ON en.course_id=a.course_id "
+                                       "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                                        "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=en.student_id "
                                        "WHERE en.student_id=? ORDER BY a.deadline;");
     query.integer(1, student.id());
@@ -705,8 +768,10 @@ SubmissionReceipt Database::submit(const User& student, int assignmentId, const 
     const std::string submittedAt = currentDateTime();
     sqlite3* db = impl_->connection;
     Transaction transaction(db);
-    Statement assignment(db, "SELECT COALESCE(e.new_deadline,a.deadline),a.max_mark FROM assignments a "
+    Statement assignment(db, "SELECT MAX(a.deadline,COALESCE(ce.new_deadline,a.deadline),"
+                             "COALESCE(e.new_deadline,a.deadline)),a.max_mark FROM assignments a "
                              "JOIN enrolments en ON en.course_id=a.course_id AND en.student_id=? "
+                             "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                              "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=en.student_id "
                              "WHERE a.assignment_id=?;");
     assignment.integer(1, student.id());
@@ -783,9 +848,11 @@ void Database::saveMark(const User& lecturer, int submissionId, double rawMark,
     if (!std::isfinite(rawMark) || rawMark < 0.0) throw std::invalid_argument("Mark must be zero or greater.");
     sqlite3* db = impl_->connection;
     Transaction transaction(db);
-    Statement submission(db, "SELECT a.max_mark,s.submitted_at,COALESCE(e.new_deadline,a.deadline),s.status "
+    Statement submission(db, "SELECT a.max_mark,s.submitted_at,MAX(a.deadline,"
+                             "COALESCE(ce.new_deadline,a.deadline),COALESCE(e.new_deadline,a.deadline)),s.status "
                              "FROM submissions s JOIN assignments a ON a.assignment_id=s.assignment_id "
                              "JOIN lecturer_courses lc ON lc.course_id=a.course_id AND lc.lecturer_id=? "
+                             "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                              "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=s.student_id "
                              "WHERE s.submission_id=? AND s.is_active=1;");
     submission.integer(1, lecturer.id());

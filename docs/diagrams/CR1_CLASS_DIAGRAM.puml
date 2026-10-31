@@ -1,0 +1,50 @@
+@startuml ModeratedLMS CR1 Class Design
+title Moderated LMS - CR1 Class Design
+
+class Lecturer <<role>>
+class Student <<role>>
+
+class Database <<repository>> {
+  +grantExtension(actor, assignmentId, studentId, newDeadline, reason)
+  +grantClassExtension(actor, assignmentId, newDeadline, reason)
+  +assignmentsForStudent(student)
+  +submit(student, assignmentId, filePath)
+  +saveMark(lecturer, submissionId, rawMark, feedback, reason)
+}
+
+class AssignmentRecord <<view model>> {
+  +id: int
+  +deadline: string
+  +effectiveDeadline: string
+}
+
+entity "class_extensions" as ClassExtension <<table>> {
+  assignment_id: int <<PK/FK>>
+  new_deadline: string
+  reason: string
+  granted_by: int <<FK>>
+}
+
+entity "extensions" as IndividualExtension <<table>> {
+  extension_id: int <<PK>>
+  assignment_id: int <<FK>>
+  student_id: int <<FK>>
+  new_deadline: string
+  reason: string
+  granted_by: int <<FK>>
+}
+
+Lecturer ..> Database : grants class or\nindividual extension
+Student ..> Database : views and submits
+Database --> ClassExtension : persists class deadline
+Database --> IndividualExtension : preserves per-student deadline
+Database ..> AssignmentRecord : returns original and\neffective deadlines
+ClassExtension ..> AssignmentRecord : participates in max deadline
+IndividualExtension ..> AssignmentRecord : participates in max deadline
+
+note bottom of Database
+  Effective deadline is the latest of
+  the original, class-wide and individual
+  deadlines. Marking also uses that value.
+end note
+@enduml

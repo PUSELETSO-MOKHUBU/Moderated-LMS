@@ -408,6 +408,64 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                 }
             }
             expect(extensionFound, "Individual extension must replace the student's effective deadline.");
+            const auto studentCanSeeAssignment = [&database, extensionAssignment](const User& candidate) {
+                for (const auto& assignment : database.assignmentsForStudent(candidate)) {
+                    if (assignment.id == extensionAssignment) return true;
+                }
+                return false;
+            };
+            expect(!studentCanSeeAssignment(*updatedStudent),
+                   "An assignment must not be visible to an unenrolled student.");
+            expectFailure([&] {
+                database.grantClassExtension(*updatedLecturer, extensionAssignment,
+                                             "2099-12-20 23:59", "Wrong course");
+            }, "A lecturer must not extend an assignment outside their assigned courses.");
+            expectFailure([&] {
+                database.grantClassExtension(*student, extensionAssignment,
+                                             "2099-12-20 23:59", "Wrong role");
+            }, "A student must not grant a class extension.");
+            expectFailure([&] {
+                database.grantClassExtension(*lecturer, extensionAssignment,
+                                             "2099-11-01 23:59", "Earlier deadline");
+            }, "A class extension must be later than the original deadline.");
+            database.grantClassExtension(*lecturer, extensionAssignment,
+                                         "2099-12-20 23:59", "Approved class extension");
+            expect(!studentCanSeeAssignment(*updatedStudent),
+                   "An unenrolled student must not see a class extension.");
+            database.enrolStudent(*admin, updatedStudent->id(), courseId);
+            const auto classAssignments = database.assignmentsForStudent(*updatedStudent);
+            bool classDeadlineVisible = false;
+            for (const auto& assignment : classAssignments) {
+                if (assignment.id == extensionAssignment) {
+                    classDeadlineVisible = assignment.effectiveDeadline == "2099-12-20T23:59:00";
+                }
+            }
+            expect(classDeadlineVisible,
+                   "A newly enrolled student must see the active class-wide extension.");
+            database.grantClassExtension(*lecturer, extensionAssignment,
+                                         "2099-12-25 23:59", "Later class extension");
+            bool updatedClassDeadlineVisible = false;
+            for (const auto& assignment : database.assignmentsForStudent(*updatedStudent)) {
+                if (assignment.id == extensionAssignment) {
+                    updatedClassDeadlineVisible = assignment.effectiveDeadline == "2099-12-25T23:59:00";
+                }
+            }
+            expect(updatedClassDeadlineVisible,
+                   "Updating a class extension to a later date must update the class deadline.");
+            database.grantExtension(*lecturer, extensionAssignment, student->id(),
+                                    "2099-12-30 23:59", "Longer individual extension");
+            bool individualDeadlineWins = false;
+            for (const auto& assignment : database.assignmentsForStudent(*student)) {
+                if (assignment.id == extensionAssignment) {
+                    individualDeadlineWins = assignment.effectiveDeadline == "2099-12-30T23:59:00";
+                }
+            }
+            expect(individualDeadlineWins,
+                   "The later individual deadline must remain effective over the class deadline.");
+            expectFailure([&] {
+                database.grantClassExtension(*lecturer, extensionAssignment,
+                                             "2099-12-24 23:59", "Shorter class deadline");
+            }, "Updating a class extension must not shorten its existing deadline.");
 
             const std::string firstDocument = fileStorage.storeDocument(sourceDocument.string(), UploadKind::Submission);
             const std::string secondDocument = fileStorage.storeDocument(sourceDocument.string(), UploadKind::Submission);
@@ -430,6 +488,10 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                    "Students must be able to inspect their own stored submission versions.");
 
             database.saveMark(*lecturer, secondVersion, 80.0, "Good work", "ignored initial reason");
+            expectFailure([&] {
+                database.grantClassExtension(*lecturer, assignmentId,
+                                             "2100-01-15 23:59", "After marking");
+            }, "A class extension must not change an already marked result.");
             expect(database.submissionsForModeration(*otherHod).empty(),
                    "A HoD must not see marked work outside their department.");
             expectFailure([&] {
@@ -508,6 +570,40 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
             expect(justLate.status == "LATE" && justLate.daysLate == 1 &&
                    justLate.penalty == 10.0,
                    "A submission just after the deadline must enter the one-day late partition.");
+
+            const int classOverdueAssignment = database.createAssignment(
+                *lecturer, courseId, "Class Extension Submission", "2000-01-01 00:00", 100.0);
+            const SubmissionReceipt beforeClassExtension =
+                database.submit(*student, classOverdueAssignment, "class-extension-before.txt");
+            expect(beforeClassExtension.status == "LATE",
+                   "A submission past the original class deadline must initially be late.");
+            database.grantClassExtension(*lecturer, classOverdueAssignment,
+                                         dateTimeOffsetFromNow(60), "Approved after-class extension");
+            database.grantExtension(*lecturer, classOverdueAssignment, student->id(),
+                                    "2000-01-02 00:00", "Individual date before class deadline");
+            bool submissionStatusRefreshed = false;
+            for (const auto& submission : database.submissionsForLecturer(*lecturer)) {
+                if (submission.id == beforeClassExtension.id) {
+                    submissionStatusRefreshed = submission.status == "SUBMITTED";
+                }
+            }
+            expect(submissionStatusRefreshed,
+                   "A class extension must refresh active submission status against the new effective deadline.");
+            const SubmissionReceipt afterClassExtension =
+                database.submit(*student, classOverdueAssignment, "class-extension-after.txt");
+            expect(afterClassExtension.status == "SUBMITTED" && afterClassExtension.daysLate == 0 &&
+                   afterClassExtension.version == 2,
+                   "A class-wide effective deadline must permit a timely resubmission after the original deadline.");
+            database.saveMark(*lecturer, afterClassExtension.id, 80.0,
+                              "Class deadline applied", "Initial mark");
+            bool classDeadlineAppliedToMark = false;
+            for (const auto& submission : database.submissionsForLecturer(*lecturer)) {
+                if (submission.id == afterClassExtension.id) {
+                    classDeadlineAppliedToMark = submission.penalty == 0.0;
+                }
+            }
+            expect(classDeadlineAppliedToMark,
+                   "Mark calculation must use the class-wide effective deadline.");
 
             database.updateUser(*admin, student->id(), student->username(), Role::Student,
                                 student->departmentId(), false, "");
