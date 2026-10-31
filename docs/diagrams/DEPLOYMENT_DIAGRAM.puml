@@ -1,0 +1,40 @@
+@startuml ModeratedLMS Deployment
+title Moderated LMS - v1.0 Deployment
+
+node "School Windows workstation\nWindows 10/11, x64" <<device>> as workstation {
+  node "Local runtime" as runtime {
+    artifact "ModeratedLMS.exe\nC++17 console application" as app
+    artifact "SQLite 3 runtime" as sqlite
+    artifact "OpenSSL Crypto runtime" as openssl
+  }
+
+  node "Writable LMS data directory\n(e.g. C:\\ProgramData\\ModeratedLMS\\Data)" as data {
+    database "lms.db\nSQLite database" as db
+    folder "uploads/assignments\nAssignment briefs" as briefs
+    folder "uploads/submissions\nStudent submissions" as submissions
+  }
+}
+
+actor "Administrator" as admin
+actor "Lecturer" as lecturer
+actor "Head of Department" as hod
+actor "Student" as student
+
+admin --> app : administers accounts,\ncourses and enrolments
+lecturer --> app : creates assignments,\nmarks work
+hod --> app : moderates and\nreleases results
+student --> app : views work,\nsubmits documents
+app --> sqlite : SQLite library
+app --> openssl : password hashing
+app --> db : reads/writes
+app --> briefs : stores/opens
+app --> submissions : stores/opens
+
+note bottom of workstation
+  v1.0 is a single-workstation deployment:
+  no application server, network API, or
+  multi-workstation database service.
+  Keep the database and uploads together
+  in an access-controlled writable folder.
+end note
+@enduml
