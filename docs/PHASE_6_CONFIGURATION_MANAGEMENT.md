@@ -20,7 +20,7 @@ Use short-lived branches; do not develop directly on `main`:
 
 Open a pull request from the topic branch to `main`. Keep each pull request focused and link it to an assignment requirement or issue. A pull request must describe its behavior change, testing, coverage impact, and any migration/release impact. The author completes the self-review checklist; a second reviewer should approve when available. Require the **C++ CI and Quality Gates** workflow to pass before merging. Prefer squash merging with an imperative, meaningful subject, for example `test: add LMS deadline boundary cases`; do not commit generated builds, coverage reports, credentials, or the user's local database.
 
-GitHub currently reports `main` as **unprotected**. A repository maintainer should enable branch protection in GitHub settings: require pull requests, require the CI check, block force pushes and deletion, and dismiss stale approvals after new commits. This repository setting cannot be enabled from this checkout.
+GitHub branch protection is enabled for `main`: merges must go through a pull request, the `tests-and-coverage` status check must pass, and force pushes and branch deletion are disabled. The repository does not enforce a minimum approval count, since this is an individual assignment; request a second reviewer when one is available and resolve all review comments before merging.
 
 ## Commit, tag, and release policy
 
@@ -43,4 +43,4 @@ The branch was pushed on 2026-10-31. The first hosted run failed because `Databa
 - **Result:** build with GCC static analysis, all tests, and the 70% coverage gate passed.
 - **Artifact:** [CI quality reports](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41246448511/artifacts/13059745090)
 
-The topic branch is pushed but has not yet been merged; no pull request or release tag exists. Open a PR from `feature/phase-6-qa` to `main`, review the diff (which includes the three earlier unpushed project commits), and merge after review. Then create and push the annotated `v0.6.0` Phase 6 milestone tag using the command above. Reserve `v1.0` for the Phase 7 project release.
+Pull request [#1](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/pull/1) is open from `feature/phase-6-qa` to `main`; its PR-triggered CI run passed. Review the full diff (which includes the three earlier project commits not previously pushed to `main`) and resolve any review comments before merging. After merge, create and push the annotated `v0.6.0` Phase 6 milestone tag using the command above. Reserve `v1.0` for the Phase 7 project release.
