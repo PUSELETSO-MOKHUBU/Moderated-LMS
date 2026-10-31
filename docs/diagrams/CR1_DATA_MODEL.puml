@@ -1,0 +1,74 @@
+@startuml ModeratedLMS CR1 Data Model
+title Moderated LMS - CR1 Deadline Data Model
+
+entity "assignments" as Assignment {
+  * assignment_id : INTEGER <<PK>>
+  --
+  course_id : INTEGER <<FK>>
+  deadline : TEXT
+}
+
+entity "class_extensions" as ClassExtension {
+  * assignment_id : INTEGER <<PK, FK>>
+  --
+  new_deadline : TEXT
+  reason : TEXT
+  granted_by : INTEGER <<FK>>
+}
+
+entity "extensions" as IndividualExtension {
+  * extension_id : INTEGER <<PK>>
+  --
+  assignment_id : INTEGER <<FK>>
+  student_id : INTEGER <<FK>>
+  new_deadline : TEXT
+  reason : TEXT
+  granted_by : INTEGER <<FK>>
+  --
+  UNIQUE(assignment_id, student_id)
+}
+
+entity "enrolments" as Enrolment {
+  * student_id : INTEGER <<PK, FK>>
+  * course_id : INTEGER <<PK, FK>>
+}
+
+entity "submissions" as Submission {
+  * submission_id : INTEGER <<PK>>
+  --
+  assignment_id : INTEGER <<FK>>
+  student_id : INTEGER <<FK>>
+  submitted_at : TEXT
+  status : TEXT
+  is_active : INTEGER
+}
+
+entity "marks" as Mark {
+  * mark_id : INTEGER <<PK>>
+  --
+  submission_id : INTEGER <<FK>>
+  final_mark : REAL
+}
+
+entity "users" as User {
+  * user_id : INTEGER <<PK>>
+  --
+  role : TEXT
+}
+
+Assignment ||--o| ClassExtension : class deadline
+Assignment ||--o{ IndividualExtension : optional student deadlines
+User ||--o{ IndividualExtension : student
+User ||--o{ ClassExtension : granting lecturer
+Assignment ||--o{ Submission
+User ||--o{ Submission : submits
+Submission ||--o| Mark
+User ||--o{ Enrolment : student
+
+note bottom of ClassExtension
+  One class extension per assignment.
+  Students in the assignment course see it
+  through their enrolment; no student rows
+  are copied into this table.
+end note
+@enduml

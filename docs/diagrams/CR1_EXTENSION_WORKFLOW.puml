@@ -1,0 +1,44 @@
+@startuml ModeratedLMS CR1 Extension Workflow
+title Moderated LMS - CR1 Extension Workflow
+
+actor Lecturer
+participant "Console (runLecturer)" as UI
+participant Database
+database "SQLite lms.db" as SQLite
+actor Student
+
+Lecturer -> UI : Select extension action
+UI -> Lecturer : Choose whole class or individual
+Lecturer -> UI : Enter assignment, deadline and reason
+UI -> Database : grantClassExtension(...) / grantExtension(...)
+Database -> SQLite : Check lecturer/course and assignment
+Database -> SQLite : Validate deadline and marked-result rule
+alt validation fails
+  SQLite --> Database : Validation/query failure
+  Database --> UI : Explicit error; transaction rolls back
+  UI --> Lecturer : Show action failure
+else valid class extension
+  Database -> SQLite : Upsert class_extensions row
+  Database -> SQLite : Refresh active SUBMITTED/LATE statuses
+  Database --> UI : Commit
+  UI --> Lecturer : Confirm class extension saved
+else valid individual extension
+  Database -> SQLite : Upsert extensions row for one student
+  Database -> SQLite : Refresh that student's active status
+  Database --> UI : Commit
+  UI --> Lecturer : Confirm individual extension saved
+end
+
+Student -> UI : View enrolled courses and assignments
+UI -> Database : assignmentsForStudent(student)
+Database -> SQLite : Join enrolments, class and individual extensions
+SQLite --> Database : Original and effective deadlines
+Database --> UI : AssignmentRecord list
+UI --> Student : Show original and effective deadline;\nlabel extension when effective differs
+
+note over Database,SQLite
+  Effective deadline is the later of the original,
+  class-wide and individual deadlines. Submission
+  acceptance and marking use the same value.
+end note
+@enduml

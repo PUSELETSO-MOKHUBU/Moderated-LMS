@@ -1,4 +1,4 @@
-# Head of Department User Manual - v1.0
+# Head of Department User Manual - v1.1
 
 The Head of Department (HoD) reviews lecturer-marked work for the HoD's department, records moderation decisions, controls release, and inspects mark history. The HoD cannot access another department's work.
 

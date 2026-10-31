@@ -25,7 +25,11 @@ On Windows, `build.bat` performs these steps and launches the console applicatio
 
 ## Deployment and user guides
 
-The [UML deployment diagram](docs/diagrams/DEPLOYMENT_DIAGRAM.puml) shows the v1.0 single-workstation architecture. Use the [technician installation guide](docs/INSTALLATION_GUIDE.md) to build, install, configure the writable data folder, and set up backups. Role-specific operating instructions are available for the [Administrator](docs/USER_MANUAL_ADMINISTRATOR.md), [Lecturer](docs/USER_MANUAL_LECTURER.md), [Head of Department](docs/USER_MANUAL_HOD.md), and [Student](docs/USER_MANUAL_STUDENT.md). See the [v1.0 release notes](docs/RELEASE_NOTES_v1.0.md).
+The [UML deployment diagram](docs/diagrams/DEPLOYMENT_DIAGRAM.puml) shows the single-workstation architecture. Use the [technician installation guide](docs/INSTALLATION_GUIDE.md) to build, install, configure the writable data folder, and set up backups. Role-specific operating instructions are available for the [Administrator](docs/USER_MANUAL_ADMINISTRATOR.md), [Lecturer](docs/USER_MANUAL_LECTURER.md), [Head of Department](docs/USER_MANUAL_HOD.md), and [Student](docs/USER_MANUAL_STUDENT.md). See the [v1.0 release notes](docs/RELEASE_NOTES_v1.0.md) and [v1.1 release notes](docs/RELEASE_NOTES_v1.1.md).
+
+## Phase 8 maintenance
+
+The [CR1 analysis and impact record](docs/PHASE_8_CR1_ANALYSIS.md) classifies and traces the class-wide deadline extension change. Updated [class](docs/diagrams/CR1_CLASS_DIAGRAM.puml), [data-model](docs/diagrams/CR1_DATA_MODEL.puml), and [extension-workflow](docs/diagrams/CR1_EXTENSION_WORKFLOW.puml) UML sources document the v1.1 design. See the [regression test results](docs/PHASE_8_REGRESSION_TEST_RESULTS.md) for local and hosted evidence.
 
 ## Verification and validation
 
@@ -72,14 +76,14 @@ assigned to the sample lecturer and enrolled for the sample student.
 ## Supported workflows
 
 - Administrators create/edit/disable users, departments and courses, assign lecturers, and enrol students.
-- Lecturers create assignments, issue/update individual extensions, inspect assigned-course submissions,
-  and mark or revise work with written feedback.
+- Lecturers create assignments, issue/update individual or class-wide extensions, inspect assigned-course
+  submissions, and mark or revise work with written feedback.
 - Students see only their enrolled courses and assignments, submit and resubmit before the effective
   deadline, and view only their own results after release.
 - HoDs review marked work in their department, approve or change marks with a reason, release moderated
   marks, and inspect the department audit history.
 - The late-penalty Strategy deducts 10% of the maximum mark per day, capped at three days. Work over
-  three days late receives zero unless an individual extension moves the effective deadline.
+  three days late receives zero unless an individual or class-wide extension moves the effective deadline.
 - Assignment briefs and student submissions support PDF, DOC/DOCX, ODT, RTF, TXT/Markdown, PPT/PPTX,
   XLS/XLSX, and CSV uploads. Files are copied into `uploads/assignments` or `uploads/submissions` below
   the application working directory, capped at 25 MB, and referenced by the database. The console displays
