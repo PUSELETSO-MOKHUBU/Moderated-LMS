@@ -6,7 +6,7 @@
 - **Default development branch:** `main`
 - **Phase 6 topic branch:** `feature/phase-6-qa`
 - **Remote:** `origin` → `https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS.git`
-- **Observed history:** before Phase 6, `main` contained three descriptive project commits not yet on `origin/main`. The published `feature/phase-6-qa` branch contains those project commits plus the Phase 5/6 work; its pull request will therefore bring the earlier commits into `main` as well. There are no release tags yet; keep `v1.0` for the Phase 7 release.
+- **Phase 6 integration:** [PR #1](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/pull/1) was squash-merged on 2026-11-01 as commit [`fe7f265`](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/commit/fe7f2655c6413a3abd09e9d119707c780a31e31d). The PR included the three project commits that were ahead of `origin/main` before this work, as well as Phase 5/6 deliverables.
 
 The GitHub workflow at `.github/workflows/ci.yml` runs for every push and pull request. It configures and builds the C++17 application and Catch2 test suite, enables GCC static analysis, executes CTest, enforces Phase 5's 70% business-logic line-coverage gate, and retains JUnit, analyzer, and coverage reports as a workflow artifact.
 
@@ -33,14 +33,14 @@ git tag -a v0.6.0 -m "Moderated LMS Phase 6 QA milestone"
 git push origin v0.6.0
 ```
 
-Create the `v0.6.0` Phase 6 milestone tag only after the PR is merged and the QA acceptance criteria pass. Reserve `v1.0` for the Phase 7 project release. No tag is created on the unmerged feature branch.
+The annotated [`v0.6.0` Phase 6 QA milestone tag](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/releases/tag/v0.6.0) was created and pushed after PR #1 was merged and its required CI passed. It points to merged commit `fe7f265`. Reserve `v1.0` for the Phase 7 project release; do not create a release tag on an unmerged feature branch.
 
 ## CI evidence and limitations
 
-The branch was pushed on 2026-10-31. The first hosted run failed because `Database.cpp` used Windows-only `localtime_s`; the code now selects the thread-safe Windows or POSIX local-time API as appropriate. The corrected workflow completed successfully:
+The first hosted run failed because `Database.cpp` used Windows-only `localtime_s`; the code now selects the thread-safe Windows or POSIX local-time API as appropriate. The corrected workflow passed on both the PR and the merged `main` commit:
 
-- **Run:** [C++ CI and Quality Gates — run 3](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41246448511)
-- **Result:** build with GCC static analysis, all tests, and the 70% coverage gate passed.
-- **Artifact:** [CI quality reports](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41246448511/artifacts/13059745090)
+- **PR check:** [C++ CI and Quality Gates — run 7](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41249062754) passed the analyzer build, tests, and coverage gate before merge.
+- **Main check:** [C++ CI and Quality Gates — run 8](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41249555427) passed after the squash merge.
+- **Artifact:** [CI quality reports](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/actions/runs/41249555427/artifacts/13061110059)
 
-Pull request [#1](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/pull/1) is open from `feature/phase-6-qa` to `main`; its PR-triggered CI run passed. Review the full diff (which includes the three earlier project commits not previously pushed to `main`) and resolve any review comments before merging. After merge, create and push the annotated `v0.6.0` Phase 6 milestone tag using the command above. Reserve `v1.0` for the Phase 7 project release.
+PR #1 is merged and `main` is protected by required pull requests and the `tests-and-coverage` check; force pushes and branch deletion are disabled. The repository does not require a separate approval count for this individual assignment, but the self-review record is completed. Phase 6 is tagged `v0.6.0`; keep `v1.0` for the Phase 7 project release.

@@ -14,7 +14,7 @@
 | Boundary, exceptional, authorization, and state-transition tests exist | Pass | Six Catch2 cases include explicit deadline and 25 MiB boundaries, rejected input, role denial, department scoping, marking, moderation and release; 91.7% measured logic line coverage. |
 | Test fixtures avoid persistent user data and leave no stored uploads behind | Pass | Workflow and document tests use unique temporary SQLite/upload roots and remove them on completion or exception. |
 | Git diffs are whitespace-clean and generated build output is excluded | Pass | `git diff --check` passes; `/build-*/` ignores the separate QA and coverage build directories. |
-| Branching, review, merge, CI, and release-tag policy is documented | Partial: review/merge and tag pending | [PR #1](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/pull/1) is open and CI passes. `main` is protected by required PRs and CI, with force pushes/deletion disabled. Review the complete diff, resolve comments, merge, and create the annotated `v0.6.0` milestone tag on the merged commit. |
+| Branching, review, merge, CI, and release-tag policy is documented | Pass | [PR #1](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/pull/1) was squash-merged after PR CI passed. `main` is protected by required PRs and CI, with force pushes/deletion disabled. The annotated [`v0.6.0` milestone tag](https://github.com/PUSELETSO-MOKHUBU/Moderated-LMS/releases/tag/v0.6.0) points to the merged commit. |
 | Metric hotspots are evaluated rather than hidden | Pass with follow-up | High-CCN UI menus and the long end-to-end test are documented in `PHASE_6_CODE_METRICS.md` for incremental refactoring; no behavior change is warranted solely to reduce the score. |
 | Tracked local database and built executable are excluded from project changes | Pass | Existing user edits to `lms.db` and `lms.exe` were left untouched and are not part of this review's intended changes. |
 
@@ -26,4 +26,4 @@
 4. Added the Phase 6 complexity hotspot register instead of claiming the high-complexity role menus and integration workflow were already refactored.
 5. Fixed the Windows-specific date conversion call exposed by the first Linux CI run, then verified the corrected hosted analyzer build, tests, and coverage gate passed.
 
-The project changes are on the pushed `feature/phase-6-qa` branch. PR #1 is open; review/merge and the release tag remain pending.
+PR #1 is merged, the post-merge CI run passed, and the annotated `v0.6.0` milestone tag is published. No separate reviewer approval was recorded; this individual-assignment repository requires pull requests and CI, but does not enforce an approval count.
