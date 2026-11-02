@@ -17,4 +17,3 @@ to its GitHub-hosted original.
 | 9. Database ER diagram | `database_er_diagram.png` |
 | 10. Implementation components | `implementation_components.png` |
 | 11. Deployment diagram | `deployment_diagram.png` |
-
