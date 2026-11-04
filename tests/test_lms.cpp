@@ -536,12 +536,28 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                    audit.front().reason == "Initial mark" &&
                    audit.back().oldMark && audit.back().newMark == 75.0,
                    "Initial marking and moderation changes must both be audited.");
-            expectFailure([&] { database.deleteAssignment(*lecturer, assignmentId); },
-                          "Assignments with audited marks must be retained.");
+            const AssignmentDeletionReceipt deletion =
+                database.deleteAssignment(*lecturer, assignmentId);
+            expect(deletion.archived && deletion.files.empty(),
+                   "Assignments with audited marks must be archived with their documents retained.");
             expectFailure([&] { database.deleteCourse(*admin, courseId); },
                           "Courses with audited marks must be retained.");
             expect(database.auditForDepartment(*hod).size() == 2,
-                   "Rejected deletions must preserve immutable moderation history.");
+                   "Archiving must preserve immutable moderation history.");
+            bool archivedAssignmentListed = false;
+            for (const auto& assignment : database.assignmentsForLecturer(*lecturer)) {
+                if (assignment.id == assignmentId) archivedAssignmentListed = true;
+            }
+            expect(!archivedAssignmentListed,
+                   "Archived assignments must disappear from the active lecturer assignment list.");
+            bool archivedStudentAssignmentListed = false;
+            for (const auto& assignment : database.assignmentsForStudent(*student)) {
+                if (assignment.id == assignmentId) archivedStudentAssignmentListed = true;
+            }
+            expect(!archivedStudentAssignmentListed,
+                   "Archived assignments must disappear from the student's active assignment list.");
+            expect(database.releasedMarks(*student).size() == 1,
+                   "Archiving must not remove marks already released to the student.");
 
             const int overdueAssignment = database.createAssignment(*lecturer, courseId, "Overdue Test",
                                                                       "2000-01-01 00:00", 100.0);
@@ -552,6 +568,19 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                 database.submit(*student, overdueAssignment, "late-resubmission.txt");
             }, "Resubmission after the effective deadline must be rejected.");
             database.saveMark(*lecturer, overdue.id, 100.0, "Late submission", "Initial mark");
+            const AssignmentDeletionReceipt archivedOverdue =
+                database.deleteAssignment(*lecturer, overdueAssignment);
+            expect(archivedOverdue.archived,
+                   "Deleting an assignment with a pending marked result must archive it.");
+            expectFailure([&] {
+                database.submit(*student, overdueAssignment, "archived-assignment.pdf");
+            }, "Students must not submit work to an archived assignment.");
+            bool archivedSubmissionInLecturerQueue = false;
+            for (const auto& submission : database.submissionsForLecturer(*lecturer)) {
+                if (submission.id == overdue.id) archivedSubmissionInLecturerQueue = true;
+            }
+            expect(!archivedSubmissionInLecturerQueue,
+                   "Archived assignments must leave the lecturer's active marking queue.");
             auto overdueQueue = database.submissionsForModeration(*hod);
             expect(overdueQueue.size() == 1 && overdueQueue.front().finalMark == 0.0,
                    "Over-three-day work must receive a zero final mark.");
@@ -680,12 +709,12 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
             const int lecturerDeletableAssignment = database.createAssignment(
                 *lecturer, courseId, "Assignment Deletion Test",
                 "2099-12-31 23:59", 100.0, removableAssignmentBrief);
-            const auto deletedAssignmentFiles =
+            const AssignmentDeletionReceipt deletedAssignment =
                 database.deleteAssignment(*lecturer, lecturerDeletableAssignment);
-            expect(deletedAssignmentFiles.size() == 1 &&
-                   deletedAssignmentFiles.front() == removableAssignmentBrief,
+            expect(!deletedAssignment.archived && deletedAssignment.files.size() == 1 &&
+                   deletedAssignment.files.front() == removableAssignmentBrief,
                    "Lecturers must be able to delete their own unmarked assignments.");
-            fileStorage.removeStoredFile(deletedAssignmentFiles.front());
+            fileStorage.removeStoredFile(deletedAssignment.files.front());
             bool removedAssignmentRemains = false;
             for (const auto& assignment : database.assignmentsForLecturer(*lecturer)) {
                 if (assignment.id == lecturerDeletableAssignment) removedAssignmentRemains = true;

@@ -51,6 +51,11 @@ struct SubmissionReceipt {
     std::string filePath;
 };
 
+struct AssignmentDeletionReceipt {
+    bool archived;
+    std::vector<std::string> files;
+};
+
 struct SubmissionRecord {
     int id;
     int assignmentId;
@@ -114,7 +119,7 @@ public:
     int createAssignment(const User& actor, int courseId, const std::string& title,
                          const std::string& deadline, double maxMark,
                          const std::string& attachmentPath = "");
-    std::vector<std::string> deleteAssignment(const User& actor, int assignmentId);
+    AssignmentDeletionReceipt deleteAssignment(const User& actor, int assignmentId);
     void grantExtension(const User& actor, int assignmentId, int studentId,
                         const std::string& newDeadline, const std::string& reason);
     void grantClassExtension(const User& actor, int assignmentId,

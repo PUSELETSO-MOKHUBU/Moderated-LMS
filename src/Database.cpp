@@ -274,6 +274,7 @@ void Database::initializeSchema() {
         "FOREIGN KEY(course_id) REFERENCES courses(course_id));"
         "CREATE TABLE IF NOT EXISTS assignments (assignment_id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL, "
         "title TEXT NOT NULL, deadline TEXT NOT NULL, max_mark REAL NOT NULL CHECK(max_mark>0), "
+        "is_archived INTEGER NOT NULL DEFAULT 0 CHECK(is_archived IN (0,1)), "
         "FOREIGN KEY(course_id) REFERENCES courses(course_id));"
         "CREATE TABLE IF NOT EXISTS extensions (extension_id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL, "
         "student_id INTEGER NOT NULL, new_deadline TEXT NOT NULL, reason TEXT NOT NULL, granted_by INTEGER NOT NULL, "
@@ -307,6 +308,7 @@ void Database::initializeSchema() {
         "SELECT RAISE(ABORT,'mark audit records are immutable'); END;";
     execute(impl_->connection, schema);
     ensureColumn(impl_->connection, "assignments", "attachment_path", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(impl_->connection, "assignments", "is_archived", "INTEGER NOT NULL DEFAULT 0");
 
     // Upgrade databases created by earlier starter builds that stored passwords directly.
     Transaction transaction(impl_->connection);
@@ -717,7 +719,8 @@ std::vector<AssignmentRecord> Database::assignmentsForLecturer(const User& lectu
                                        "FROM assignments a JOIN courses c ON c.course_id=a.course_id "
                                        "JOIN lecturer_courses lc ON lc.course_id=c.course_id "
                                        "LEFT JOIN submissions s ON s.assignment_id=a.assignment_id AND s.is_active=1 "
-                                       "WHERE lc.lecturer_id=? GROUP BY a.assignment_id ORDER BY a.deadline;");
+                                       "WHERE lc.lecturer_id=? AND a.is_archived=0 "
+                                       "GROUP BY a.assignment_id ORDER BY a.deadline;");
     query.integer(1, lecturer.id());
     std::vector<AssignmentRecord> records;
     while (query.step() == SQLITE_ROW) {
@@ -735,7 +738,8 @@ std::vector<AssignmentRecord> Database::assignmentsForDepartment(const User& hod
         "COUNT(s.submission_id),SUM(CASE WHEN s.status IN ('MARKED','MODERATED','RELEASED') THEN 1 ELSE 0 END) "
         "FROM assignments a JOIN courses c ON c.course_id=a.course_id "
         "LEFT JOIN submissions s ON s.assignment_id=a.assignment_id AND s.is_active=1 "
-        "WHERE c.department_id=? GROUP BY a.assignment_id ORDER BY a.deadline,c.code;");
+        "WHERE c.department_id=? AND a.is_archived=0 "
+        "GROUP BY a.assignment_id ORDER BY a.deadline,c.code;");
     query.integer(1, hod.departmentId());
     std::vector<AssignmentRecord> records;
     while (query.step() == SQLITE_ROW) {
@@ -768,7 +772,7 @@ int Database::createAssignment(const User& actor, int courseId, const std::strin
     return static_cast<int>(sqlite3_last_insert_rowid(impl_->connection));
 }
 
-std::vector<std::string> Database::deleteAssignment(const User& actor, int assignmentId) {
+AssignmentDeletionReceipt Database::deleteAssignment(const User& actor, int assignmentId) {
     requireCurrentIdentity(impl_->connection, actor);
     if (!actor.can(Permission::ManageCourses) && !actor.can(Permission::TeachCourse)) {
         throw std::runtime_error("Access denied for this role.");
@@ -799,8 +803,11 @@ std::vector<std::string> Database::deleteAssignment(const User& actor, int assig
         hasAuditHistory = audited.step() != SQLITE_ROW || audited.intColumn(0) != 0;
     }
     if (hasAuditHistory) {
-        throw std::runtime_error("This assignment has audited marks and cannot be deleted. "
-                                 "Keep it to preserve its immutable mark history.");
+        Statement archive(db, "UPDATE assignments SET is_archived=1 WHERE assignment_id=?;");
+        archive.integer(1, assignmentId);
+        checkDone(archive, db);
+        transaction.commit();
+        return {true, {}};
     }
 
     std::vector<std::string> files;
@@ -824,7 +831,7 @@ std::vector<std::string> Database::deleteAssignment(const User& actor, int assig
     remove.integer(1, assignmentId);
     checkDone(remove, db);
     transaction.commit();
-    return files;
+    return {false, std::move(files)};
 }
 
 void Database::grantExtension(const User& actor, int assignmentId, int studentId,
@@ -835,7 +842,7 @@ void Database::grantExtension(const User& actor, int assignmentId, int studentId
     Transaction transaction(impl_->connection);
     Statement existing(impl_->connection, "SELECT a.deadline FROM assignments a JOIN lecturer_courses lc ON lc.course_id=a.course_id "
                                           "JOIN enrolments e ON e.course_id=a.course_id WHERE a.assignment_id=? "
-                                          "AND lc.lecturer_id=? AND e.student_id=?;");
+                                          "AND lc.lecturer_id=? AND e.student_id=? AND a.is_archived=0;");
     existing.integer(1, assignmentId);
     existing.integer(2, actor.id());
     existing.integer(3, studentId);
@@ -885,7 +892,8 @@ void Database::grantClassExtension(const User& actor, int assignmentId,
     Statement assignment(db, "SELECT a.deadline,ce.new_deadline FROM assignments a "
                              "JOIN lecturer_courses lc ON lc.course_id=a.course_id "
                              "AND lc.lecturer_id=? LEFT JOIN class_extensions ce "
-                             "ON ce.assignment_id=a.assignment_id WHERE a.assignment_id=?;");
+                             "ON ce.assignment_id=a.assignment_id "
+                             "WHERE a.assignment_id=? AND a.is_archived=0;");
     assignment.integer(1, actor.id());
     assignment.integer(2, assignmentId);
     if (assignment.step() != SQLITE_ROW) {
@@ -936,7 +944,7 @@ std::vector<AssignmentRecord> Database::assignmentsForStudent(const User& studen
                                        "JOIN courses c ON c.course_id=a.course_id JOIN enrolments en ON en.course_id=a.course_id "
                                        "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                                        "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=en.student_id "
-                                       "WHERE en.student_id=? ORDER BY a.deadline;");
+                                       "WHERE en.student_id=? AND a.is_archived=0 ORDER BY a.deadline;");
     query.integer(1, student.id());
     std::vector<AssignmentRecord> records;
     while (query.step() == SQLITE_ROW) {
@@ -958,7 +966,7 @@ SubmissionReceipt Database::submit(const User& student, int assignmentId, const 
                              "JOIN enrolments en ON en.course_id=a.course_id AND en.student_id=? "
                              "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                              "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=en.student_id "
-                             "WHERE a.assignment_id=?;");
+                             "WHERE a.assignment_id=? AND a.is_archived=0;");
     assignment.integer(1, student.id());
     assignment.integer(2, assignmentId);
     if (assignment.step() != SQLITE_ROW) throw std::runtime_error("Assignment not found or you are not enrolled.");
@@ -1016,7 +1024,8 @@ std::vector<SubmissionRecord> Database::submissionsForLecturer(const User& lectu
     requirePermission(impl_->connection, lecturer, Permission::TeachCourse);
     std::string sql = submissionSelect;
     sql += "LEFT JOIN marks m ON m.submission_id=s.submission_id JOIN lecturer_courses lc ON lc.course_id=a.course_id "
-           "WHERE lc.lecturer_id=? AND s.is_active=1 AND s.status IN ('SUBMITTED','LATE','MARKED') "
+           "WHERE lc.lecturer_id=? AND a.is_archived=0 AND s.is_active=1 "
+           "AND s.status IN ('SUBMITTED','LATE','MARKED') "
            "ORDER BY a.deadline,c.code,u.username;";
     Statement query(impl_->connection, sql);
     query.integer(1, lecturer.id());
@@ -1039,7 +1048,7 @@ void Database::saveMark(const User& lecturer, int submissionId, double rawMark,
                              "JOIN lecturer_courses lc ON lc.course_id=a.course_id AND lc.lecturer_id=? "
                              "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                              "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=s.student_id "
-                             "WHERE s.submission_id=? AND s.is_active=1;");
+                             "WHERE s.submission_id=? AND s.is_active=1 AND a.is_archived=0;");
     submission.integer(1, lecturer.id());
     submission.integer(2, submissionId);
     if (submission.step() != SQLITE_ROW) throw std::runtime_error("Submission not found or not assigned to you.");

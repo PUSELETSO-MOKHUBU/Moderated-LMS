@@ -397,10 +397,15 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
                 printAssignments(assignments, true);
                 if (!assignments.empty()) {
                     const int id = readInt("Assignment ID to delete (0 to cancel): ");
-                    if (id != 0 && confirm("Delete this assignment and its unmarked submissions")) {
-                        const auto deletedFiles = database.deleteAssignment(user, id);
-                        removeStoredFiles(deletedFiles, files);
-                        std::cout << "Assignment and its related records deleted.\n";
+                    if (id != 0 && confirm("Delete this assignment (audited work will be archived)")) {
+                        const AssignmentDeletionReceipt result = database.deleteAssignment(user, id);
+                        if (result.archived) {
+                            std::cout << "Assignment archived. Its mark history and documents are retained, "
+                                         "and it is no longer listed as an active assignment.\n";
+                        } else {
+                            removeStoredFiles(result.files, files);
+                            std::cout << "Assignment and its related records deleted.\n";
+                        }
                     }
                 }
             } else {
@@ -425,7 +430,13 @@ void runHod(Database& database, const User& user, const FileStorage& files) {
             if (choice == 1) {
                 printCourses(database, user);
             } else if (choice == 2) {
-                printAssignments(database.assignmentsForDepartment(user), true);
+                const auto assignments = database.assignmentsForDepartment(user);
+                printAssignments(assignments, true);
+                if (assignments.empty()) {
+                    std::cout << "This HoD account can see only assignments for courses in its assigned "
+                                 "department. Ask an administrator to check the HoD department "
+                                 "(Admin option 2) and course department (Admin option 6).\n";
+                }
             } else if (choice == 3) {
                 const auto submissions = database.submissionsForModeration(user);
                 printSubmissions(submissions);
@@ -494,7 +505,8 @@ void runHod(Database& database, const User& user, const FileStorage& files) {
     }
 }
 
-void runStudent(Database& database, const User& user, const FileStorage& files) {
+void runStudent(Database& database, const User& user, const FileStorage& files,
+                bool& exitApplication) {
     for (;;) {
         printHeader("Student");
         std::cout << "1. View enrolled courses and assignments\n2. Submit/resubmit work\n"
@@ -503,43 +515,11 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
         const int choice = readInt("Choice: ");
         if (choice == 0) return;
         try {
-            if (choice == 1 || choice == 2 || choice == 4) {
+            if (choice == 1 || choice == 4) {
                 printCourses(database, user);
                 const auto assignments = database.assignmentsForStudent(user);
                 printAssignments(assignments);
-                if (choice == 2 && !assignments.empty()) {
-                    const int id = readInt("Assignment ID (0 to cancel): ");
-                    if (id != 0) {
-                        const std::string source = FileStorage::chooseDocument();
-                        if (source.empty()) {
-                            std::cout << "File selection cancelled; no submission was saved.\n";
-                            continue;
-                        }
-                        const std::string storedPath = files.storeDocument(source, UploadKind::Submission);
-                        SubmissionReceipt receipt{};
-                        try {
-                            receipt = database.submit(user, id, storedPath);
-                        } catch (const std::exception& error) {
-                            try {
-                                files.removeStoredFile(storedPath);
-                            } catch (const std::exception& cleanupError) {
-                                throw std::runtime_error(std::string(error.what()) +
-                                    "; could not clean up uploaded submission: " + cleanupError.what());
-                            }
-                            throw;
-                        }
-                        std::cout << "Submission saved as ID " << receipt.id << ", version " << receipt.version
-                                  << " (" << receipt.status << "). Stored document: " << receipt.filePath;
-                        if (receipt.daysLate > 0) {
-                            std::cout << " " << receipt.daysLate << " day(s) late; penalty "
-                                      << receipt.penalty << " marks.";
-                        }
-                        if (receipt.markWillBeZero) {
-                            std::cout << " More than three days late: the final mark will be zero.";
-                        }
-                        std::cout << '\n';
-                    }
-                } else if (choice == 4 && !assignments.empty()) {
+                if (choice == 4 && !assignments.empty()) {
                     const int id = readInt("Assignment ID whose brief to open (0 to cancel): ");
                     if (id != 0) {
                         const AssignmentRecord& assignment = findAssignment(assignments, id);
@@ -547,6 +527,62 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
                             std::cout << "No document is attached to this assignment.\n";
                         } else {
                             files.openDocument(assignment.attachmentPath);
+                        }
+                    }
+                }
+            } else if (choice == 2) {
+                printCourses(database, user);
+                const auto assignments = database.assignmentsForStudent(user);
+                printAssignments(assignments);
+                if (!assignments.empty()) {
+                    const int id = readInt("Assignment ID (0 to return to the student menu): ");
+                    if (id != 0) {
+                        findAssignment(assignments, id);
+                        for (;;) {
+                            printHeader("Submit assignment");
+                            std::cout << "1. Upload from files\n2. Back to student menu\n"
+                                         "3. Exit application\n";
+                            const int uploadChoice = readInt("Choice: ");
+                            if (uploadChoice == 2) break;
+                            if (uploadChoice == 3) {
+                                exitApplication = true;
+                                return;
+                            }
+                            if (uploadChoice != 1) {
+                                std::cout << "Choose an option from 1 to 3.\n";
+                                continue;
+                            }
+                            const std::string source = FileStorage::chooseDocument();
+                            if (source.empty()) {
+                                std::cout << "File selection cancelled. Choose upload again, go back, or exit.\n";
+                                continue;
+                            }
+                            const std::string storedPath =
+                                files.storeDocument(source, UploadKind::Submission);
+                            SubmissionReceipt receipt{};
+                            try {
+                                receipt = database.submit(user, id, storedPath);
+                            } catch (const std::exception& error) {
+                                try {
+                                    files.removeStoredFile(storedPath);
+                                } catch (const std::exception& cleanupError) {
+                                    throw std::runtime_error(std::string(error.what()) +
+                                        "; could not clean up uploaded submission: " + cleanupError.what());
+                                }
+                                throw;
+                            }
+                            std::cout << "Submission saved as ID " << receipt.id << ", version "
+                                      << receipt.version << " (" << receipt.status
+                                      << "). Stored document: " << receipt.filePath;
+                            if (receipt.daysLate > 0) {
+                                std::cout << " " << receipt.daysLate << " day(s) late; penalty "
+                                          << receipt.penalty << " marks.";
+                            }
+                            if (receipt.markWillBeZero) {
+                                std::cout << " More than three days late: the final mark will be zero.";
+                            }
+                            std::cout << '\n';
+                            break;
                         }
                     }
                 }
@@ -589,6 +625,7 @@ int main() {
                      "First-run demo accounts: admin/admin123, lecturer/lecturer123, "
                      "hod/hod123, student/student123\n"
                      "Change demo credentials before real use.\n";
+        bool exitApplication = false;
         for (;;) {
             printHeader("Login");
             std::cout << "1. Sign in\n0. Exit\n";
@@ -610,8 +647,9 @@ int main() {
                 case Role::Administrator: runAdmin(database, *user, files); break;
                 case Role::Lecturer: runLecturer(database, *user, files); break;
                 case Role::HeadOfDepartment: runHod(database, *user, files); break;
-                case Role::Student: runStudent(database, *user, files); break;
+                case Role::Student: runStudent(database, *user, files, exitApplication); break;
             }
+            if (exitApplication) break;
         }
     } catch (const std::exception& error) {
         if (std::string(error.what()) != "Input ended.") {

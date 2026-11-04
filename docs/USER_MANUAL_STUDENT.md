@@ -7,7 +7,7 @@ Students can view assignments in enrolled courses, submit and resubmit work, ins
 | Option | Use |
 |---|---|
 | 1. View enrolled courses and assignments | List your courses and assignments, including the original and effective deadline. An assignment marked **extension applied** has an effective deadline later than its original deadline. |
-| 2. Submit/resubmit work | Choose an assignment, select the document in the Windows file picker, and submit it. The system stores each version and reports its status and any applicable late penalty. |
+| 2. Submit/resubmit work | Choose an assignment, then choose **1. Upload from files**. **2. Back** returns to the student menu; **3. Exit application** closes the LMS. The system stores each version and reports its status and any applicable late penalty. |
 | 3. View released marks and feedback | See results only after the HoD has released them. |
 | 4. Open an assignment brief | Select an assignment and open its attached document if one exists. |
 | 5. View/open my submissions | Review your submission versions/status and open one of your documents. |
@@ -17,7 +17,7 @@ Students can view assignments in enrolled courses, submit and resubmit work, ins
 
 1. Check **1. View enrolled courses and assignments** and note the **effective** deadline. A lecturer may grant an individual extension or a class-wide extension. A class-wide extension is shown to students enrolled in the course, including students who enroll later while the class-extension record exists.
 2. Prepare a non-empty PDF, DOC/DOCX, ODT, RTF, TXT/Markdown, PPT/PPTX, XLS/XLSX or CSV file no larger than 25 MB.
-3. Choose **2. Submit/resubmit work**, enter the assignment ID, then select the document in the file picker. Canceling the picker returns to the student menu without saving a submission.
+3. Choose **2. Submit/resubmit work**, enter the assignment ID, and choose **1. Upload from files**. Canceling the file picker lets you retry, go back, or exit without saving a submission.
 4. Read the receipt. It identifies the saved submission version and whether it is submitted or late. Resubmitting creates a new version.
 5. Use **5. View/open my submissions** to review your saved versions. Use **3. View released marks and feedback** after the HoD releases the result.
 
