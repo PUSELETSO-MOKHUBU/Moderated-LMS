@@ -536,6 +536,12 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                    audit.front().reason == "Initial mark" &&
                    audit.back().oldMark && audit.back().newMark == 75.0,
                    "Initial marking and moderation changes must both be audited.");
+            expectFailure([&] { database.deleteAssignment(*lecturer, assignmentId); },
+                          "Assignments with audited marks must be retained.");
+            expectFailure([&] { database.deleteCourse(*admin, courseId); },
+                          "Courses with audited marks must be retained.");
+            expect(database.auditForDepartment(*hod).size() == 2,
+                   "Rejected deletions must preserve immutable moderation history.");
 
             const int overdueAssignment = database.createAssignment(*lecturer, courseId, "Overdue Test",
                                                                       "2000-01-01 00:00", 100.0);
@@ -550,7 +556,20 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
             expect(overdueQueue.size() == 1 && overdueQueue.front().finalMark == 0.0,
                    "Over-three-day work must receive a zero final mark.");
             database.moderateSubmission(*hod, overdue.id, std::nullopt, "");
+            const auto pendingRelease = database.submissionsReadyForRelease(*hod);
+            expect(pendingRelease.size() == 1 && pendingRelease.front().id == overdue.id &&
+                   pendingRelease.front().status == "MODERATED",
+                   "HoD approval without a mark change must send work to the release queue.");
             database.releaseModerated(*hod, overdue.id);
+            bool approvedMarkReleased = false;
+            for (const auto& releasedMark : database.releasedMarks(*student)) {
+                if (releasedMark.id == overdue.id) {
+                    approvedMarkReleased = releasedMark.status == "RELEASED" &&
+                                           releasedMark.finalMark == 0.0;
+                }
+            }
+            expect(approvedMarkReleased,
+                   "The student must see the approved mark only after HoD release.");
 
             const int nearFutureAssignment = database.createAssignment(
                 *updatedLecturer, newCourseId, "Deadline Boundary", dateTimeOffsetFromNow(5), 100.0);
@@ -604,6 +623,74 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
             }
             expect(classDeadlineAppliedToMark,
                    "Mark calculation must use the class-wide effective deadline.");
+
+            const int temporaryUserId = database.createUser(
+                *admin, "temporary-user", "temporary-password", Role::Student, -1);
+            database.enrolStudent(*admin, temporaryUserId, courseId);
+            expectFailure([&] { database.deleteUser(*lecturer, temporaryUserId); },
+                          "Lecturers must not delete user accounts.");
+            database.deleteUser(*admin, temporaryUserId);
+            bool temporaryUserRemains = false;
+            for (const auto& account : database.listUsers(*admin)) {
+                if (account.id == temporaryUserId) temporaryUserRemains = true;
+            }
+            expect(!temporaryUserRemains, "Administrators must be able to delete unused user accounts.");
+            database.seedDemoAccounts();
+            temporaryUserRemains = false;
+            for (const auto& account : database.listUsers(*admin)) {
+                if (account.id == temporaryUserId) temporaryUserRemains = true;
+            }
+            expect(!temporaryUserRemains,
+                   "Deleted accounts must not be recreated by demo-data initialization.");
+            expectFailure([&] { database.deleteUser(*admin, admin->id()); },
+                          "An administrator must not delete their own active session account.");
+            expectFailure([&] { database.deleteUser(*admin, student->id()); },
+                          "Users with course or mark history must not be deleted.");
+
+            const int removableCourse = database.createCourse(
+                *admin, "DEL100", "Course Deletion Test", newDepartmentId);
+            database.assignLecturer(*admin, lecturer->id(), removableCourse);
+            database.enrolStudent(*admin, student->id(), removableCourse);
+            const std::string removableBrief =
+                fileStorage.storeDocument(sourceDocument.string(), UploadKind::Assignment);
+            const int removableAssignment = database.createAssignment(
+                *lecturer, removableCourse, "Course Deletion Assignment",
+                "2099-12-31 23:59", 100.0, removableBrief);
+            const std::string removableSubmission =
+                fileStorage.storeDocument(sourceDocument.string(), UploadKind::Submission);
+            database.submit(*student, removableAssignment, removableSubmission);
+            expectFailure([&] { database.deleteCourse(*student, removableCourse); },
+                          "Students must not delete courses.");
+            const auto deletedCourseFiles = database.deleteCourse(*admin, removableCourse);
+            expect(deletedCourseFiles.size() == 2,
+                   "Course deletion must return the brief and all submitted document paths.");
+            for (const auto& deletedFile : deletedCourseFiles) {
+                fileStorage.removeStoredFile(deletedFile);
+                expect(!std::filesystem::exists(deletedFile),
+                       "Course deletion cleanup must remove associated stored documents.");
+            }
+            bool removedCourseRemains = false;
+            for (const auto& course : database.coursesFor(*admin)) {
+                if (course.id == removableCourse) removedCourseRemains = true;
+            }
+            expect(!removedCourseRemains, "Administrators must be able to delete a course.");
+
+            const std::string removableAssignmentBrief =
+                fileStorage.storeDocument(sourceDocument.string(), UploadKind::Assignment);
+            const int lecturerDeletableAssignment = database.createAssignment(
+                *lecturer, courseId, "Assignment Deletion Test",
+                "2099-12-31 23:59", 100.0, removableAssignmentBrief);
+            const auto deletedAssignmentFiles =
+                database.deleteAssignment(*lecturer, lecturerDeletableAssignment);
+            expect(deletedAssignmentFiles.size() == 1 &&
+                   deletedAssignmentFiles.front() == removableAssignmentBrief,
+                   "Lecturers must be able to delete their own unmarked assignments.");
+            fileStorage.removeStoredFile(deletedAssignmentFiles.front());
+            bool removedAssignmentRemains = false;
+            for (const auto& assignment : database.assignmentsForLecturer(*lecturer)) {
+                if (assignment.id == lecturerDeletableAssignment) removedAssignmentRemains = true;
+            }
+            expect(!removedAssignmentRemains, "Deleted assignments must no longer appear in lecturer lists.");
 
             database.updateUser(*admin, student->id(), student->username(), Role::Student,
                                 student->departmentId(), false, "");

@@ -258,6 +258,7 @@ Database::~Database() {
 
 void Database::initializeSchema() {
     const char* schema =
+        "CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         "CREATE TABLE IF NOT EXISTS departments (department_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);"
         "CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, "
         "password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('ADMIN','LECTURER','HOD','STUDENT')), "
@@ -329,6 +330,16 @@ void Database::initializeSchema() {
 void Database::seedDemoAccounts() {
     sqlite3* db = impl_->connection;
     Transaction transaction(db);
+    bool alreadySeeded = false;
+    {
+        Statement seeded(db, "SELECT value FROM app_metadata WHERE key='demo_seeded';");
+        alreadySeeded = seeded.step() == SQLITE_ROW && seeded.stringColumn(0) == "1";
+    }
+    if (alreadySeeded) {
+        transaction.commit();
+        return;
+    }
+
     Statement department(db, "INSERT OR IGNORE INTO departments(name) VALUES(?);");
     department.text(1, "General");
     checkDone(department, db);
@@ -383,6 +394,8 @@ void Database::seedDemoAccounts() {
     student.integer(1, courseId);
     student.text(2, "student");
     checkDone(student, db);
+    Statement markSeeded(db, "INSERT OR REPLACE INTO app_metadata(key,value) VALUES('demo_seeded','1');");
+    checkDone(markSeeded, db);
     transaction.commit();
 }
 
@@ -476,6 +489,60 @@ void Database::updateUser(const User& actor, int userId, const std::string& user
     }
 }
 
+void Database::deleteUser(const User& actor, int userId) {
+    requirePermission(impl_->connection, actor, Permission::ManageUsers);
+    if (userId <= 0) throw std::invalid_argument("Select a valid user ID.");
+    if (userId == actor.id()) throw std::invalid_argument("You cannot delete your own account.");
+
+    sqlite3* db = impl_->connection;
+    Transaction transaction(db);
+    std::string role;
+    bool active = false;
+    {
+        Statement target(db, "SELECT role,active FROM users WHERE user_id=?;");
+        target.integer(1, userId);
+        if (target.step() != SQLITE_ROW) throw std::runtime_error("User not found.");
+        role = target.stringColumn(0);
+        active = target.intColumn(1) != 0;
+    }
+
+    if (role == "ADMIN" && active) {
+        Statement admins(db, "SELECT COUNT(*) FROM users WHERE role='ADMIN' AND active=1 AND user_id<>?;");
+        admins.integer(1, userId);
+        if (admins.step() != SQLITE_ROW || admins.intColumn(0) == 0) {
+            throw std::runtime_error("The last active administrator cannot be deleted.");
+        }
+    }
+
+    bool hasReferences = false;
+    {
+        Statement references(db,
+            "SELECT EXISTS(SELECT 1 FROM extensions WHERE student_id=? OR granted_by=? "
+            "UNION ALL SELECT 1 FROM class_extensions WHERE granted_by=? "
+            "UNION ALL SELECT 1 FROM submissions WHERE student_id=? "
+            "UNION ALL SELECT 1 FROM marks WHERE marked_by=? "
+            "UNION ALL SELECT 1 FROM mark_audit WHERE changed_by=?);");
+        for (int parameter = 1; parameter <= 6; ++parameter) references.integer(parameter, userId);
+        hasReferences = references.step() != SQLITE_ROW || references.intColumn(0) != 0;
+    }
+    if (hasReferences) {
+        throw std::runtime_error(
+            "This user is referenced by submissions, extensions, or mark history. "
+            "Deactivate the account to preserve those records.");
+    }
+
+    Statement removeLecturerLinks(db, "DELETE FROM lecturer_courses WHERE lecturer_id=?;");
+    removeLecturerLinks.integer(1, userId);
+    checkDone(removeLecturerLinks, db);
+    Statement removeEnrolments(db, "DELETE FROM enrolments WHERE student_id=?;");
+    removeEnrolments.integer(1, userId);
+    checkDone(removeEnrolments, db);
+    Statement remove(db, "DELETE FROM users WHERE user_id=?;");
+    remove.integer(1, userId);
+    checkDone(remove, db);
+    transaction.commit();
+}
+
 std::vector<UserRecord> Database::listUsers(const User& actor) {
     requirePermission(impl_->connection, actor, Permission::ManageUsers);
     Statement query(impl_->connection, "SELECT user_id,username,role,active,COALESCE(department_id,-1) FROM users ORDER BY user_id;");
@@ -542,6 +609,65 @@ void Database::updateCourse(const User& actor, int courseId, const std::string& 
     update.integer(4, courseId);
     checkDone(update, impl_->connection);
     if (sqlite3_changes(impl_->connection) == 0) throw std::runtime_error("Course not found.");
+}
+
+std::vector<std::string> Database::deleteCourse(const User& actor, int courseId) {
+    requirePermission(impl_->connection, actor, Permission::ManageCourses);
+    if (courseId <= 0) throw std::invalid_argument("Select a valid course ID.");
+
+    sqlite3* db = impl_->connection;
+    Transaction transaction(db);
+    {
+        Statement exists(db, "SELECT 1 FROM courses WHERE course_id=?;");
+        exists.integer(1, courseId);
+        if (exists.step() != SQLITE_ROW) throw std::runtime_error("Course not found.");
+    }
+
+    bool hasAuditHistory = false;
+    {
+        Statement audited(db, "SELECT EXISTS(SELECT 1 FROM mark_audit ma "
+                              "JOIN submissions s ON s.submission_id=ma.submission_id "
+                              "JOIN assignments a ON a.assignment_id=s.assignment_id "
+                              "WHERE a.course_id=?);");
+        audited.integer(1, courseId);
+        hasAuditHistory = audited.step() != SQLITE_ROW || audited.intColumn(0) != 0;
+    }
+    if (hasAuditHistory) {
+        throw std::runtime_error("This course has audited marks and cannot be deleted. "
+                                 "Keep the course to preserve its immutable mark history.");
+    }
+
+    std::vector<std::string> files;
+    Statement paths(db,
+        "SELECT attachment_path FROM assignments WHERE course_id=? AND attachment_path<>'' "
+        "UNION ALL SELECT s.file_path FROM submissions s JOIN assignments a "
+        "ON a.assignment_id=s.assignment_id WHERE a.course_id=? AND s.file_path<>'';");
+    paths.integer(1, courseId);
+    paths.integer(2, courseId);
+    while (paths.step() == SQLITE_ROW) files.push_back(paths.stringColumn(0));
+
+    const auto deleteRelated = [db, courseId](const std::string& sql) {
+        Statement remove(db, sql);
+        remove.integer(1, courseId);
+        checkDone(remove, db);
+    };
+    deleteRelated("DELETE FROM marks WHERE submission_id IN "
+                  "(SELECT s.submission_id FROM submissions s JOIN assignments a "
+                  "ON a.assignment_id=s.assignment_id WHERE a.course_id=?);");
+    deleteRelated("DELETE FROM submissions WHERE assignment_id IN "
+                  "(SELECT assignment_id FROM assignments WHERE course_id=?);");
+    deleteRelated("DELETE FROM extensions WHERE assignment_id IN "
+                  "(SELECT assignment_id FROM assignments WHERE course_id=?);");
+    deleteRelated("DELETE FROM class_extensions WHERE assignment_id IN "
+                  "(SELECT assignment_id FROM assignments WHERE course_id=?);");
+    deleteRelated("DELETE FROM assignments WHERE course_id=?;");
+    deleteRelated("DELETE FROM lecturer_courses WHERE course_id=?;");
+    deleteRelated("DELETE FROM enrolments WHERE course_id=?;");
+    Statement removeCourse(db, "DELETE FROM courses WHERE course_id=?;");
+    removeCourse.integer(1, courseId);
+    checkDone(removeCourse, db);
+    transaction.commit();
+    return files;
 }
 
 void Database::assignLecturer(const User& actor, int lecturerId, int courseId) {
@@ -640,6 +766,65 @@ int Database::createAssignment(const User& actor, int courseId, const std::strin
     checkDone(insert, impl_->connection);
     if (sqlite3_changes(impl_->connection) == 0) throw std::runtime_error("You are not assigned to that course.");
     return static_cast<int>(sqlite3_last_insert_rowid(impl_->connection));
+}
+
+std::vector<std::string> Database::deleteAssignment(const User& actor, int assignmentId) {
+    requireCurrentIdentity(impl_->connection, actor);
+    if (!actor.can(Permission::ManageCourses) && !actor.can(Permission::TeachCourse)) {
+        throw std::runtime_error("Access denied for this role.");
+    }
+    if (assignmentId <= 0) throw std::invalid_argument("Select a valid assignment ID.");
+
+    sqlite3* db = impl_->connection;
+    Transaction transaction(db);
+    {
+        Statement assignment(db,
+            "SELECT a.course_id FROM assignments a WHERE a.assignment_id=? AND "
+            "(?=1 OR EXISTS(SELECT 1 FROM lecturer_courses lc "
+            "WHERE lc.course_id=a.course_id AND lc.lecturer_id=?));");
+        assignment.integer(1, assignmentId);
+        assignment.integer(2, actor.can(Permission::ManageCourses) ? 1 : 0);
+        assignment.integer(3, actor.id());
+        if (assignment.step() != SQLITE_ROW) {
+            throw std::runtime_error("Assignment not found or you are not allowed to delete it.");
+        }
+    }
+
+    bool hasAuditHistory = false;
+    {
+        Statement audited(db, "SELECT EXISTS(SELECT 1 FROM mark_audit ma "
+                              "JOIN submissions s ON s.submission_id=ma.submission_id "
+                              "WHERE s.assignment_id=?);");
+        audited.integer(1, assignmentId);
+        hasAuditHistory = audited.step() != SQLITE_ROW || audited.intColumn(0) != 0;
+    }
+    if (hasAuditHistory) {
+        throw std::runtime_error("This assignment has audited marks and cannot be deleted. "
+                                 "Keep it to preserve its immutable mark history.");
+    }
+
+    std::vector<std::string> files;
+    Statement paths(db, "SELECT attachment_path FROM assignments WHERE assignment_id=? AND attachment_path<>'' "
+                        "UNION ALL SELECT file_path FROM submissions WHERE assignment_id=? AND file_path<>'';");
+    paths.integer(1, assignmentId);
+    paths.integer(2, assignmentId);
+    while (paths.step() == SQLITE_ROW) files.push_back(paths.stringColumn(0));
+
+    const auto deleteRelated = [db, assignmentId](const std::string& sql) {
+        Statement remove(db, sql);
+        remove.integer(1, assignmentId);
+        checkDone(remove, db);
+    };
+    deleteRelated("DELETE FROM marks WHERE submission_id IN "
+                  "(SELECT submission_id FROM submissions WHERE assignment_id=?);");
+    deleteRelated("DELETE FROM submissions WHERE assignment_id=?;");
+    deleteRelated("DELETE FROM extensions WHERE assignment_id=?;");
+    deleteRelated("DELETE FROM class_extensions WHERE assignment_id=?;");
+    Statement remove(db, "DELETE FROM assignments WHERE assignment_id=?;");
+    remove.integer(1, assignmentId);
+    checkDone(remove, db);
+    transaction.commit();
+    return files;
 }
 
 void Database::grantExtension(const User& actor, int assignmentId, int studentId,

@@ -28,7 +28,7 @@ else()
     target_link_libraries(lms_core PUBLIC SQLite::SQLite3 OpenSSL::Crypto)
 endif()
 if(WIN32)
-    target_link_libraries(lms_core PUBLIC shell32)
+    target_link_libraries(lms_core PUBLIC shell32 comdlg32)
 endif()
 
 if(MSVC)

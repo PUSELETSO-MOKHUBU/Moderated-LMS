@@ -94,6 +94,7 @@ public:
                    Role role, int departmentId);
     void updateUser(const User& actor, int userId, const std::string& username,
                     Role role, int departmentId, bool active, const std::string& newPassword);
+    void deleteUser(const User& actor, int userId);
     std::vector<UserRecord> listUsers(const User& actor);
 
     int createDepartment(const User& actor, const std::string& name);
@@ -103,6 +104,7 @@ public:
                      int departmentId);
     void updateCourse(const User& actor, int courseId, const std::string& code,
                       const std::string& title, int departmentId);
+    std::vector<std::string> deleteCourse(const User& actor, int courseId);
     void assignLecturer(const User& actor, int lecturerId, int courseId);
     void enrolStudent(const User& actor, int studentId, int courseId);
     std::vector<CourseRecord> coursesFor(const User& user);
@@ -112,6 +114,7 @@ public:
     int createAssignment(const User& actor, int courseId, const std::string& title,
                          const std::string& deadline, double maxMark,
                          const std::string& attachmentPath = "");
+    std::vector<std::string> deleteAssignment(const User& actor, int assignmentId);
     void grantExtension(const User& actor, int assignmentId, int studentId,
                         const std::string& newDeadline, const std::string& reason);
     void grantClassExtension(const User& actor, int assignmentId,

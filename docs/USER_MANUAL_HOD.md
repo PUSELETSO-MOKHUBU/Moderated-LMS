@@ -15,7 +15,7 @@ The Head of Department (HoD) reviews lecturer-marked work for the HoD's departme
 
 ## Moderation and release
 
-1. Select **3. Moderate marked work**. This list contains lecturer-marked submissions awaiting moderation; work already moderated but not released is not in this queue.
+1. After the lecturer saves a mark, select **3. Moderate marked work**. This list contains the active lecturer-marked submissions for your department; work already moderated but not released is in option 4.
 2. Select a submission ID. Review the student's submission and assignment brief before deciding.
 3. Press Enter at the revised-mark prompt to approve the lecturer's mark unchanged. Otherwise enter a valid final mark (no greater than the assignment maximum) and provide the reason for the change.
 4. Confirm immediate release, or choose **4. Release moderated work** later. Until release, marks and feedback remain hidden from the student.

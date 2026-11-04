@@ -8,10 +8,11 @@ Lecturers work only with their assigned courses. The Head of Department controls
 |---|---|
 | 1. List my courses | Check courses assigned to your account. |
 | 2. List my assignments | View assignment deadlines, effective deadlines and submission/marking counts. |
-| 3. Create assignment | Choose a course, enter title, local deadline (`YYYY-MM-DD HH:MM`), maximum mark and optionally a supported brief file. The brief is copied into managed storage. |
+| 3. Create assignment | Choose a course, enter title, local deadline (`YYYY-MM-DD HH:MM`), maximum mark and optionally select a supported brief file in the Windows file picker. The brief is copied into managed storage. |
 | 4. Grant/update extension | Choose **1** for the whole class or **2** for one student, then enter the assignment ID, revised deadline and reason. For individual scope, also enter the student user ID. Class extensions apply to all current and future course enrollees; individual extensions apply only to the named student. A deadline must be later than the original, and an existing class deadline cannot be shortened. |
 | 5. View and mark submissions | Choose an active submission, optionally open the student document and brief, then enter the raw mark and written feedback. Revised marks require a reason. The result remains hidden until the HoD releases it. |
 | 6. Open an assignment brief | Select an assignment and open its attached brief if present. |
+| 7. Delete assignment | Permanently remove an assignment and its unmarked submissions from one of your assigned courses. An assignment with mark-audit history cannot be deleted. |
 | 0. Log out | Return to the login screen. |
 
 ## Marking workflow

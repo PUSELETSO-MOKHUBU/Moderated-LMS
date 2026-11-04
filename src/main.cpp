@@ -175,13 +175,29 @@ const SubmissionRecord& findSubmission(const std::vector<SubmissionRecord>& subm
     throw std::invalid_argument("Choose a submission ID from the list.");
 }
 
-void runAdmin(Database& database, const User& user) {
+void removeStoredFiles(const std::vector<std::string>& paths, const FileStorage& files) {
+    std::vector<std::string> failures;
+    for (const std::string& path : paths) {
+        try {
+            files.removeStoredFile(path);
+        } catch (const std::exception& error) {
+            failures.push_back(path + ": " + error.what());
+        }
+    }
+    if (!failures.empty()) {
+        std::cerr << "The database records were deleted, but some stored files could not be removed:\n";
+        for (const std::string& failure : failures) std::cerr << "  " << failure << '\n';
+    }
+}
+
+void runAdmin(Database& database, const User& user, const FileStorage& files) {
     for (;;) {
         printHeader("Administrator");
         std::cout << "1. Create user\n2. Edit/activate/deactivate user\n3. List users\n"
                      "4. Create department\n5. Create course\n6. Edit course\n"
                      "7. Assign lecturer to course\n8. Enrol student in course\n"
-                     "9. List courses\n10. Edit department\n0. Log out\n";
+                     "9. List courses\n10. Edit department\n11. Delete user\n12. Delete course\n"
+                     "0. Log out\n";
         const int choice = readInt("Choice: ");
         if (choice == 0) return;
         try {
@@ -257,8 +273,26 @@ void runAdmin(Database& database, const User& user) {
                 printDepartments(database, user);
                 database.updateDepartment(user, readInt("Department ID: "), readLine("New department name: "));
                 std::cout << "Department updated.\n";
+            } else if (choice == 11) {
+                for (const auto& record : database.listUsers(user)) {
+                    std::cout << "  " << record.id << " | " << record.username << " | " << record.role
+                              << " | " << (record.active ? "active" : "disabled") << '\n';
+                }
+                const int id = readInt("User ID to delete (0 to cancel): ");
+                if (id != 0 && confirm("Permanently delete this user")) {
+                    database.deleteUser(user, id);
+                    std::cout << "User deleted.\n";
+                }
+            } else if (choice == 12) {
+                printCourses(database, user);
+                const int id = readInt("Course ID to delete (0 to cancel): ");
+                if (id != 0 && confirm("Delete this course, its assignments, and its submissions")) {
+                    const auto deletedFiles = database.deleteCourse(user, id);
+                    removeStoredFiles(deletedFiles, files);
+                    std::cout << "Course and its related records deleted.\n";
+                }
             } else {
-                std::cout << "Choose an option from 0 to 10.\n";
+                std::cout << "Choose an option from 0 to 12.\n";
             }
         } catch (const std::exception& error) {
             std::cerr << "Action failed: " << error.what() << '\n';
@@ -271,7 +305,7 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
         printHeader("Lecturer");
         std::cout << "1. List assigned courses\n2. List assignments\n3. Create assignment\n"
                      "4. Grant/update extension\n5. View and mark submissions\n"
-                     "6. Open an assignment brief\n0. Log out\n";
+             "6. Open an assignment brief\n7. Delete assignment\n0. Log out\n";
         const int choice = readInt("Choice: ");
         if (choice == 0) return;
         try {
@@ -285,8 +319,14 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
                 const std::string title = readLine("Assignment title: ");
                 const std::string deadline = readLine("Deadline (YYYY-MM-DD HH:MM): ");
                 const double maximum = readDouble("Maximum mark: ");
-                const std::string source = readLine(
-                    "Assignment brief document path (PDF/DOCX/ODT/RTF/TXT/PPTX/XLSX/CSV; blank to skip): ");
+                std::string source;
+                if (confirm("Choose an assignment brief document")) {
+                    source = FileStorage::chooseDocument();
+                    if (source.empty()) {
+                        std::cout << "File selection cancelled; assignment was not created.\n";
+                        continue;
+                    }
+                }
                 std::string storedPath;
                 if (!source.empty()) storedPath = files.storeDocument(source, UploadKind::Assignment);
                 try {
@@ -352,8 +392,19 @@ void runLecturer(Database& database, const User& user, const FileStorage& files)
                     const int id = readInt("Assignment ID to open (0 to cancel): ");
                     if (id != 0) files.openDocument(findAssignment(assignments, id).attachmentPath);
                 }
+            } else if (choice == 7) {
+                const auto assignments = database.assignmentsForLecturer(user);
+                printAssignments(assignments, true);
+                if (!assignments.empty()) {
+                    const int id = readInt("Assignment ID to delete (0 to cancel): ");
+                    if (id != 0 && confirm("Delete this assignment and its unmarked submissions")) {
+                        const auto deletedFiles = database.deleteAssignment(user, id);
+                        removeStoredFiles(deletedFiles, files);
+                        std::cout << "Assignment and its related records deleted.\n";
+                    }
+                }
             } else {
-                std::cout << "Choose an option from 0 to 6.\n";
+                std::cout << "Choose an option from 0 to 7.\n";
             }
         } catch (const std::exception& error) {
             std::cerr << "Action failed: " << error.what() << '\n';
@@ -391,7 +442,8 @@ void runHod(Database& database, const User& user, const FileStorage& files) {
                                 files.openDocument(submission.assignmentAttachmentPath);
                             }
                         }
-                        const std::string mark = readLine("New final mark (blank to approve unchanged): ");
+                        const std::string mark = readLine(
+                            "New final mark (leave blank to approve the lecturer's mark): ");
                         std::optional<double> revised;
                         std::string reason;
                         if (!mark.empty()) {
@@ -458,8 +510,11 @@ void runStudent(Database& database, const User& user, const FileStorage& files) 
                 if (choice == 2 && !assignments.empty()) {
                     const int id = readInt("Assignment ID (0 to cancel): ");
                     if (id != 0) {
-                        const std::string source = readLine(
-                            "Document file path (PDF/DOCX/ODT/RTF/TXT/PPTX/XLSX/CSV): ");
+                        const std::string source = FileStorage::chooseDocument();
+                        if (source.empty()) {
+                            std::cout << "File selection cancelled; no submission was saved.\n";
+                            continue;
+                        }
                         const std::string storedPath = files.storeDocument(source, UploadKind::Submission);
                         SubmissionReceipt receipt{};
                         try {
@@ -552,7 +607,7 @@ int main() {
             }
             std::cout << "Welcome, " << user->username() << " (" << roleToText(user->role()) << ").\n";
             switch (user->role()) {
-                case Role::Administrator: runAdmin(database, *user); break;
+                case Role::Administrator: runAdmin(database, *user, files); break;
                 case Role::Lecturer: runLecturer(database, *user, files); break;
                 case Role::HeadOfDepartment: runHod(database, *user, files); break;
                 case Role::Student: runStudent(database, *user, files); break;

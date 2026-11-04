@@ -10,6 +10,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <commdlg.h>
 #include <shellapi.h>
 #endif
 
@@ -41,6 +42,30 @@ std::string lowerExtension(const std::filesystem::path& path) {
 }  // namespace
 
 FileStorage::FileStorage(std::filesystem::path root) : root_(std::move(root)) {}
+
+std::string FileStorage::chooseDocument() {
+#ifdef _WIN32
+    std::array<wchar_t, 32768> selectedPath{};
+    static constexpr wchar_t filter[] =
+        L"Supported documents\0*.pdf;*.doc;*.docx;*.odt;*.rtf;*.txt;*.ppt;*.pptx;*.xls;*.xlsx;*.csv;*.md\0"
+        L"All files\0*.*\0";
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.lpstrFilter = filter;
+    dialog.lpstrFile = selectedPath.data();
+    dialog.nMaxFile = static_cast<DWORD>(selectedPath.size());
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&dialog)) {
+        const DWORD error = CommDlgExtendedError();
+        if (error == 0) return {};
+        throw std::runtime_error("Unable to open the document picker (Windows error " +
+                                 std::to_string(error) + ").");
+    }
+    return std::filesystem::path(selectedPath.data()).u8string();
+#else
+    throw std::runtime_error("Selecting documents is currently supported only on Windows.");
+#endif
+}
 
 bool FileStorage::isSupportedDocument(const std::filesystem::path& path) {
     static const std::array<std::string, 12> supported = {

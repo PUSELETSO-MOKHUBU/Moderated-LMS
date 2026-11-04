@@ -20,6 +20,8 @@ Start the application, enter your LMS username and password, and choose the Admi
 | 8. Enrol student in course | Enter the student user ID and course ID. |
 | 9. List courses | Review courses visible to the administrator. |
 | 10. Edit department | Rename the selected department. |
+| 11. Delete user | Permanently remove a user with no submission, extension, or mark-history records; course links are removed with the account. Deactivate accounts with historical records instead. The last active administrator and your own account cannot be deleted. |
+| 12. Delete course | Permanently remove a course, its assignments and submissions, and associated uploaded files. Courses with audited marks cannot be deleted. |
 | 0. Log out | Return to the login screen. |
 
 ## Recommended setup sequence
