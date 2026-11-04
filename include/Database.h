@@ -56,6 +56,11 @@ struct AssignmentDeletionReceipt {
     std::vector<std::string> files;
 };
 
+struct CourseDeletionReceipt {
+    bool archived;
+    std::vector<std::string> files;
+};
+
 struct SubmissionRecord {
     int id;
     int assignmentId;
@@ -109,7 +114,7 @@ public:
                      int departmentId);
     void updateCourse(const User& actor, int courseId, const std::string& code,
                       const std::string& title, int departmentId);
-    std::vector<std::string> deleteCourse(const User& actor, int courseId);
+    CourseDeletionReceipt deleteCourse(const User& actor, int courseId);
     void assignLecturer(const User& actor, int lecturerId, int courseId);
     void enrolStudent(const User& actor, int studentId, int courseId);
     std::vector<CourseRecord> coursesFor(const User& user);

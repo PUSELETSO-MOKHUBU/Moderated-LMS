@@ -286,10 +286,16 @@ void runAdmin(Database& database, const User& user, const FileStorage& files) {
             } else if (choice == 12) {
                 printCourses(database, user);
                 const int id = readInt("Course ID to delete (0 to cancel): ");
-                if (id != 0 && confirm("Delete this course, its assignments, and its submissions")) {
-                    const auto deletedFiles = database.deleteCourse(user, id);
-                    removeStoredFiles(deletedFiles, files);
-                    std::cout << "Course and its related records deleted.\n";
+                if (id != 0 && confirm("Delete this course (audited history will be archived)")) {
+                    const CourseDeletionReceipt result = database.deleteCourse(user, id);
+                    if (result.archived) {
+                        std::cout << "Course archived. It is removed from active course lists; its "
+                                     "assignments, mark history, and results are retained. Pending "
+                                     "marking and moderation can still be completed.\n";
+                    } else {
+                        removeStoredFiles(result.files, files);
+                        std::cout << "Course and its related records deleted.\n";
+                    }
                 }
             } else {
                 std::cout << "Choose an option from 0 to 12.\n";

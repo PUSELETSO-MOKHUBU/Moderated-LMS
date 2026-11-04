@@ -265,7 +265,8 @@ void Database::initializeSchema() {
         "active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), department_id INTEGER, "
         "FOREIGN KEY(department_id) REFERENCES departments(department_id));"
         "CREATE TABLE IF NOT EXISTS courses (course_id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, "
-        "title TEXT NOT NULL, department_id INTEGER NOT NULL, FOREIGN KEY(department_id) REFERENCES departments(department_id));"
+        "title TEXT NOT NULL, department_id INTEGER NOT NULL, is_archived INTEGER NOT NULL DEFAULT 0 "
+        "CHECK(is_archived IN (0,1)), FOREIGN KEY(department_id) REFERENCES departments(department_id));"
         "CREATE TABLE IF NOT EXISTS lecturer_courses (lecturer_id INTEGER NOT NULL, course_id INTEGER NOT NULL, "
         "PRIMARY KEY(lecturer_id,course_id), FOREIGN KEY(lecturer_id) REFERENCES users(user_id), "
         "FOREIGN KEY(course_id) REFERENCES courses(course_id));"
@@ -307,6 +308,7 @@ void Database::initializeSchema() {
         "CREATE TRIGGER IF NOT EXISTS mark_audit_no_delete BEFORE DELETE ON mark_audit BEGIN "
         "SELECT RAISE(ABORT,'mark audit records are immutable'); END;";
     execute(impl_->connection, schema);
+    ensureColumn(impl_->connection, "courses", "is_archived", "INTEGER NOT NULL DEFAULT 0");
     ensureColumn(impl_->connection, "assignments", "attachment_path", "TEXT NOT NULL DEFAULT ''");
     ensureColumn(impl_->connection, "assignments", "is_archived", "INTEGER NOT NULL DEFAULT 0");
 
@@ -591,7 +593,7 @@ int Database::createCourse(const User& actor, const std::string& code, const std
     requireText(code, "Course code");
     requireText(title, "Course title");
     if (departmentId <= 0) throw std::invalid_argument("Select a valid department.");
-    Statement insert(impl_->connection, "INSERT INTO courses(code,title,department_id) VALUES(?,?,?);");
+    Statement insert(impl_->connection, "INSERT INTO courses(code,title,department_id,is_archived) VALUES(?,?,?,0);");
     insert.text(1, code);
     insert.text(2, title);
     insert.integer(3, departmentId);
@@ -613,7 +615,7 @@ void Database::updateCourse(const User& actor, int courseId, const std::string& 
     if (sqlite3_changes(impl_->connection) == 0) throw std::runtime_error("Course not found.");
 }
 
-std::vector<std::string> Database::deleteCourse(const User& actor, int courseId) {
+CourseDeletionReceipt Database::deleteCourse(const User& actor, int courseId) {
     requirePermission(impl_->connection, actor, Permission::ManageCourses);
     if (courseId <= 0) throw std::invalid_argument("Select a valid course ID.");
 
@@ -635,8 +637,11 @@ std::vector<std::string> Database::deleteCourse(const User& actor, int courseId)
         hasAuditHistory = audited.step() != SQLITE_ROW || audited.intColumn(0) != 0;
     }
     if (hasAuditHistory) {
-        throw std::runtime_error("This course has audited marks and cannot be deleted. "
-                                 "Keep the course to preserve its immutable mark history.");
+        Statement archive(db, "UPDATE courses SET is_archived=1 WHERE course_id=?;");
+        archive.integer(1, courseId);
+        checkDone(archive, db);
+        transaction.commit();
+        return {true, {}};
     }
 
     std::vector<std::string> files;
@@ -669,15 +674,18 @@ std::vector<std::string> Database::deleteCourse(const User& actor, int courseId)
     removeCourse.integer(1, courseId);
     checkDone(removeCourse, db);
     transaction.commit();
-    return files;
+    return {false, std::move(files)};
 }
 
 void Database::assignLecturer(const User& actor, int lecturerId, int courseId) {
     requirePermission(impl_->connection, actor, Permission::ManageCourses);
     Statement insert(impl_->connection, "INSERT OR IGNORE INTO lecturer_courses(lecturer_id,course_id) "
-                                         "SELECT user_id,? FROM users WHERE user_id=? AND role='LECTURER' AND active=1;");
+                                         "SELECT u.user_id,? FROM users u JOIN courses c ON c.course_id=? "
+                                         "WHERE u.user_id=? AND u.role='LECTURER' AND u.active=1 "
+                                         "AND c.is_archived=0;");
     insert.integer(1, courseId);
-    insert.integer(2, lecturerId);
+    insert.integer(2, courseId);
+    insert.integer(3, lecturerId);
     checkDone(insert, impl_->connection);
     if (sqlite3_changes(impl_->connection) == 0) throw std::runtime_error("Active lecturer or course not found, or assignment already exists.");
 }
@@ -685,9 +693,12 @@ void Database::assignLecturer(const User& actor, int lecturerId, int courseId) {
 void Database::enrolStudent(const User& actor, int studentId, int courseId) {
     requirePermission(impl_->connection, actor, Permission::ManageCourses);
     Statement insert(impl_->connection, "INSERT OR IGNORE INTO enrolments(student_id,course_id) "
-                                         "SELECT user_id,? FROM users WHERE user_id=? AND role='STUDENT' AND active=1;");
+                                         "SELECT u.user_id,? FROM users u JOIN courses c ON c.course_id=? "
+                                         "WHERE u.user_id=? AND u.role='STUDENT' AND u.active=1 "
+                                         "AND c.is_archived=0;");
     insert.integer(1, courseId);
-    insert.integer(2, studentId);
+    insert.integer(2, courseId);
+    insert.integer(3, studentId);
     checkDone(insert, impl_->connection);
     if (sqlite3_changes(impl_->connection) == 0) throw std::runtime_error("Active student or course not found, or enrolment already exists.");
 }
@@ -697,9 +708,17 @@ std::vector<CourseRecord> Database::coursesFor(const User& user) {
     std::string sql =
         "SELECT c.course_id,c.code,c.title,c.department_id,d.name FROM courses c "
         "JOIN departments d ON d.department_id=c.department_id ";
-    if (user.role() == Role::Lecturer) sql += "JOIN lecturer_courses lc ON lc.course_id=c.course_id WHERE lc.lecturer_id=? ";
-    else if (user.role() == Role::Student) sql += "JOIN enrolments e ON e.course_id=c.course_id WHERE e.student_id=? ";
-    else if (user.role() == Role::HeadOfDepartment) sql += "WHERE c.department_id=? ";
+    if (user.role() == Role::Lecturer) {
+        sql += "JOIN lecturer_courses lc ON lc.course_id=c.course_id "
+               "WHERE c.is_archived=0 AND lc.lecturer_id=? ";
+    } else if (user.role() == Role::Student) {
+        sql += "JOIN enrolments e ON e.course_id=c.course_id "
+               "WHERE c.is_archived=0 AND e.student_id=? ";
+    } else if (user.role() == Role::HeadOfDepartment) {
+        sql += "WHERE c.is_archived=0 AND c.department_id=? ";
+    } else {
+        sql += "WHERE c.is_archived=0 ";
+    }
     sql += "ORDER BY c.code;";
     Statement query(impl_->connection, sql);
     if (user.role() != Role::Administrator) query.integer(1, user.role() == Role::HeadOfDepartment ? user.departmentId() : user.id());
@@ -719,7 +738,7 @@ std::vector<AssignmentRecord> Database::assignmentsForLecturer(const User& lectu
                                        "FROM assignments a JOIN courses c ON c.course_id=a.course_id "
                                        "JOIN lecturer_courses lc ON lc.course_id=c.course_id "
                                        "LEFT JOIN submissions s ON s.assignment_id=a.assignment_id AND s.is_active=1 "
-                                       "WHERE lc.lecturer_id=? AND a.is_archived=0 "
+                                       "WHERE lc.lecturer_id=? AND c.is_archived=0 AND a.is_archived=0 "
                                        "GROUP BY a.assignment_id ORDER BY a.deadline;");
     query.integer(1, lecturer.id());
     std::vector<AssignmentRecord> records;
@@ -738,7 +757,7 @@ std::vector<AssignmentRecord> Database::assignmentsForDepartment(const User& hod
         "COUNT(s.submission_id),SUM(CASE WHEN s.status IN ('MARKED','MODERATED','RELEASED') THEN 1 ELSE 0 END) "
         "FROM assignments a JOIN courses c ON c.course_id=a.course_id "
         "LEFT JOIN submissions s ON s.assignment_id=a.assignment_id AND s.is_active=1 "
-        "WHERE c.department_id=? AND a.is_archived=0 "
+        "WHERE c.department_id=? AND c.is_archived=0 AND a.is_archived=0 "
         "GROUP BY a.assignment_id ORDER BY a.deadline,c.code;");
     query.integer(1, hod.departmentId());
     std::vector<AssignmentRecord> records;
@@ -759,7 +778,9 @@ int Database::createAssignment(const User& actor, int courseId, const std::strin
     const std::string normalizedDeadline = normalizeDateTime(deadline);
     Statement insert(impl_->connection, "INSERT INTO assignments(course_id,title,deadline,max_mark,attachment_path) "
                                          "SELECT ?,?,?,?,? WHERE EXISTS "
-                                         "(SELECT 1 FROM lecturer_courses WHERE lecturer_id=? AND course_id=?);");
+                                         "(SELECT 1 FROM lecturer_courses lc JOIN courses c "
+                                         "ON c.course_id=lc.course_id WHERE lc.lecturer_id=? "
+                                         "AND lc.course_id=? AND c.is_archived=0);");
     insert.integer(1, courseId);
     insert.text(2, title);
     insert.text(3, normalizedDeadline);
@@ -842,7 +863,10 @@ void Database::grantExtension(const User& actor, int assignmentId, int studentId
     Transaction transaction(impl_->connection);
     Statement existing(impl_->connection, "SELECT a.deadline FROM assignments a JOIN lecturer_courses lc ON lc.course_id=a.course_id "
                                           "JOIN enrolments e ON e.course_id=a.course_id WHERE a.assignment_id=? "
-                                          "AND lc.lecturer_id=? AND e.student_id=? AND a.is_archived=0;");
+                                          "AND lc.lecturer_id=? AND e.student_id=? "
+                                          "AND a.is_archived=0 AND EXISTS "
+                                          "(SELECT 1 FROM courses c WHERE c.course_id=a.course_id "
+                                          "AND c.is_archived=0);");
     existing.integer(1, assignmentId);
     existing.integer(2, actor.id());
     existing.integer(3, studentId);
@@ -893,7 +917,9 @@ void Database::grantClassExtension(const User& actor, int assignmentId,
                              "JOIN lecturer_courses lc ON lc.course_id=a.course_id "
                              "AND lc.lecturer_id=? LEFT JOIN class_extensions ce "
                              "ON ce.assignment_id=a.assignment_id "
-                             "WHERE a.assignment_id=? AND a.is_archived=0;");
+                             "WHERE a.assignment_id=? AND a.is_archived=0 "
+                             "AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id=a.course_id "
+                             "AND c.is_archived=0);");
     assignment.integer(1, actor.id());
     assignment.integer(2, assignmentId);
     if (assignment.step() != SQLITE_ROW) {
@@ -944,7 +970,8 @@ std::vector<AssignmentRecord> Database::assignmentsForStudent(const User& studen
                                        "JOIN courses c ON c.course_id=a.course_id JOIN enrolments en ON en.course_id=a.course_id "
                                        "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                                        "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=en.student_id "
-                                       "WHERE en.student_id=? AND a.is_archived=0 ORDER BY a.deadline;");
+                                       "WHERE en.student_id=? AND a.is_archived=0 AND c.is_archived=0 "
+                                       "ORDER BY a.deadline;");
     query.integer(1, student.id());
     std::vector<AssignmentRecord> records;
     while (query.step() == SQLITE_ROW) {
@@ -964,6 +991,7 @@ SubmissionReceipt Database::submit(const User& student, int assignmentId, const 
     Statement assignment(db, "SELECT MAX(a.deadline,COALESCE(ce.new_deadline,a.deadline),"
                              "COALESCE(e.new_deadline,a.deadline)),a.max_mark FROM assignments a "
                              "JOIN enrolments en ON en.course_id=a.course_id AND en.student_id=? "
+                             "JOIN courses c ON c.course_id=a.course_id AND c.is_archived=0 "
                              "LEFT JOIN class_extensions ce ON ce.assignment_id=a.assignment_id "
                              "LEFT JOIN extensions e ON e.assignment_id=a.assignment_id AND e.student_id=en.student_id "
                              "WHERE a.assignment_id=? AND a.is_archived=0;");

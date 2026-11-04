@@ -540,8 +540,6 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                 database.deleteAssignment(*lecturer, assignmentId);
             expect(deletion.archived && deletion.files.empty(),
                    "Assignments with audited marks must be archived with their documents retained.");
-            expectFailure([&] { database.deleteCourse(*admin, courseId); },
-                          "Courses with audited marks must be retained.");
             expect(database.auditForDepartment(*hod).size() == 2,
                    "Archiving must preserve immutable moderation history.");
             bool archivedAssignmentListed = false;
@@ -690,10 +688,11 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
             database.submit(*student, removableAssignment, removableSubmission);
             expectFailure([&] { database.deleteCourse(*student, removableCourse); },
                           "Students must not delete courses.");
-            const auto deletedCourseFiles = database.deleteCourse(*admin, removableCourse);
-            expect(deletedCourseFiles.size() == 2,
+            const CourseDeletionReceipt deletedCourse =
+                database.deleteCourse(*admin, removableCourse);
+            expect(!deletedCourse.archived && deletedCourse.files.size() == 2,
                    "Course deletion must return the brief and all submitted document paths.");
-            for (const auto& deletedFile : deletedCourseFiles) {
+            for (const auto& deletedFile : deletedCourse.files) {
                 fileStorage.removeStoredFile(deletedFile);
                 expect(!std::filesystem::exists(deletedFile),
                        "Course deletion cleanup must remove associated stored documents.");
@@ -720,6 +719,54 @@ TEST_CASE("Role-scoped LMS workflow persists and releases moderated results",
                 if (assignment.id == lecturerDeletableAssignment) removedAssignmentRemains = true;
             }
             expect(!removedAssignmentRemains, "Deleted assignments must no longer appear in lecturer lists.");
+
+            const int courseArchiveAssignment = database.createAssignment(
+                *updatedLecturer, newCourseId, "Course Archive Moderation Test",
+                "2099-12-31 23:59", 100.0);
+            const SubmissionReceipt courseArchiveSubmission =
+                database.submit(*updatedStudent, courseArchiveAssignment, "course-archive-work.pdf");
+            database.saveMark(*updatedLecturer, courseArchiveSubmission.id, 80.0,
+                              "Ready for HoD", "Initial mark");
+            const CourseDeletionReceipt archivedCourse =
+                database.deleteCourse(*admin, newCourseId);
+            expect(archivedCourse.archived && archivedCourse.files.empty(),
+                   "A course with audited marks must be archived rather than deleted.");
+            bool archivedCourseVisible = false;
+            for (const auto& course : database.coursesFor(*admin)) {
+                if (course.id == newCourseId) archivedCourseVisible = true;
+            }
+            expect(!archivedCourseVisible, "Administrators must not see archived courses in active lists.");
+            const auto seesArchivedCourse = [&database, newCourseId](const User& user) {
+                for (const auto& course : database.coursesFor(user)) {
+                    if (course.id == newCourseId) return true;
+                }
+                return false;
+            };
+            expect(!seesArchivedCourse(*updatedLecturer),
+                   "Lecturers must not see archived courses in active lists.");
+            expect(!seesArchivedCourse(*updatedStudent),
+                   "Students must not see archived courses in active lists.");
+            expect(!seesArchivedCourse(*otherHod),
+                   "HoDs must not see archived courses in active lists.");
+            expectFailure([&] {
+                database.submit(*updatedStudent, courseArchiveAssignment, "late-course-work.pdf");
+            }, "Students must not submit to assignments in archived courses.");
+            bool pendingArchivedMarkAvailable = false;
+            for (const auto& submission : database.submissionsForModeration(*otherHod)) {
+                if (submission.id == courseArchiveSubmission.id) pendingArchivedMarkAvailable = true;
+            }
+            expect(pendingArchivedMarkAvailable,
+                   "HoDs must retain access to pending moderation for archived courses.");
+            database.moderateSubmission(*otherHod, courseArchiveSubmission.id, std::nullopt, "");
+            database.releaseModerated(*otherHod, courseArchiveSubmission.id);
+            bool archivedCourseMarkReleased = false;
+            for (const auto& mark : database.releasedMarks(*updatedStudent)) {
+                if (mark.id == courseArchiveSubmission.id && mark.finalMark == 80.0) {
+                    archivedCourseMarkReleased = true;
+                }
+            }
+            expect(archivedCourseMarkReleased,
+                   "HoDs must be able to release marks for archived courses.");
 
             database.updateUser(*admin, student->id(), student->username(), Role::Student,
                                 student->departmentId(), false, "");
